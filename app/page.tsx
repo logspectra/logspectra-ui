@@ -1,0 +1,548 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useProject } from "@/lib/project-context";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
+import { api } from "@/lib/api";
+import { TrendingUp, TrendingDown, Brain } from "lucide-react";
+
+export default function Dashboard() {
+  const { selectedProject, timeRange, customDateRange } = useProject();
+  const [dashboardData, setDashboardData] = useState<Awaited<ReturnType<typeof api.getDashboardData>> | null>(null);
+
+  useEffect(() => {
+    if (!selectedProject?.id) {
+      setDashboardData(null);
+      return;
+    }
+
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const data = await api.getDashboardData(timeRange, customDateRange);
+        if (!cancelled) setDashboardData(data);
+      } catch {
+        if (!cancelled) setDashboardData(null);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProject?.id, timeRange, customDateRange.from?.getTime(), customDateRange.to?.getTime()]);
+
+  const stats = useMemo(() => {
+    const fallback = {
+      totalLogs: 0,
+      totalLogsChangePercent: 0,
+      errorCount: 0,
+      errorChangePercent: 0,
+      totalServices: [] as string[],
+      serviceCount: 0,
+      affectedServices: { count: 0, services: [] as string[] },
+      aiAnalysesRun: 0,
+      aiCached: 0,
+      aiSaved: 0,
+    };
+    return dashboardData?.stats || fallback;
+  }, [dashboardData]);
+
+  const errorTimelineData = dashboardData?.errorTimeline || [];
+  const distributionData = dashboardData?.distribution || [];
+  const levelVolumeData = dashboardData?.levelVolume || [];
+  const topErrorsData = dashboardData?.topErrors || [];
+  const issuesData = dashboardData?.issues || [];
+  const heatmapData = dashboardData?.heatmap || [];
+
+  // Light mode colors for services
+  const ServiceColors: Record<string, string> = {
+    "api-gateway": "#3b82f6",
+    "auth-service": "#ef4444",
+    "payment-service": "#f97316",
+    "admin-service": "#a855f7",
+    "user-service": "#22c55e",
+  };
+
+  // Light mode colors for log levels
+  const LevelColors: Record<string, string> = {
+    ERROR: "#dc2626",
+    WARN: "#d97706",
+    INFO: "#2563eb",
+    DEBUG: "#64748b",
+  };
+
+  const servicePalette = [
+    "#3b82f6",
+    "#ef4444",
+    "#f97316",
+    "#a855f7",
+    "#22c55e",
+    "#06b6d4",
+    "#eab308",
+    "#ec4899",
+  ];
+
+  const timelineServiceKeys = (
+    stats.totalServices.length > 0
+      ? stats.totalServices
+      : Array.from(
+          new Set(
+            errorTimelineData.flatMap((point) =>
+              Object.keys(point).filter((key) => key !== "timestamp")
+            )
+          )
+        )
+  ).filter((service) => errorTimelineData.some((point) => typeof point[service] === "number"));
+
+  const getServiceColor = (service: string, index: number): string => {
+    if (ServiceColors[service]) return ServiceColors[service];
+    return servicePalette[index % servicePalette.length];
+  };
+
+  const heatmapServices = (
+    stats.totalServices.length > 0
+      ? stats.totalServices
+      : Array.from(new Set(heatmapData.map((cell) => cell.service)))
+  ).filter((service) => service && service.length > 0);
+
+  const heatmapValues = heatmapData.map((cell) => cell.value);
+  const maxHeatmapValue = heatmapValues.length > 0 ? Math.max(...heatmapValues) : 0;
+  const heatmapLookup = new Map(heatmapData.map((cell) => [`${cell.service}-${cell.hour}`, cell.value]));
+
+  const heatmapColorClass = (value: number): string => {
+    if (value <= 0) return "bg-gray-100";
+    if (maxHeatmapValue <= 0) return "bg-blue-200";
+
+    const ratio = value / maxHeatmapValue;
+    if (ratio <= 0.2) return "bg-blue-200";
+    if (ratio <= 0.45) return "bg-amber-200";
+    if (ratio <= 0.75) return "bg-orange-400";
+    return "bg-red-500";
+  };
+
+  const CustomTooltip = (props: any) => {
+    if (!props.active || !props.payload) return null;
+    return (
+      <div className="bg-card border border-border rounded p-2">
+        {props.payload.map((entry: any, index: number) => (
+          <div key={index} style={{ color: entry.color }} className="text-xs">
+            {entry.name}: {entry.value}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const MiniSparkline = ({ data, color }: { data: number[]; color: string }) => (
+    <LineChart width={60} height={24} data={data.map((v, i) => ({ value: v, index: i }))}>
+      <Line
+        type="monotone"
+        dataKey="value"
+        stroke={color}
+        strokeWidth={2}
+        dot={false}
+      />
+    </LineChart>
+  );
+
+  const formatLogCount = (value: number): string => {
+    const abs = Math.abs(value);
+
+    if (abs >= 1_000_000) {
+      return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+    }
+
+    if (abs >= 1_000) {
+      return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+    }
+
+    return value.toLocaleString();
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Project Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">{selectedProject?.name || 'Dashboard'}</h1>
+          <p className="text-sm text-muted-foreground mt-1">Project ID: {selectedProject?.id}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-sm text-muted-foreground">Services</p>
+          <p className="text-2xl font-bold text-foreground">{stats.serviceCount || 0}</p>
+        </div>
+      </div>
+
+      {/* Row 1: Stat Cards */}
+      <div className="grid grid-cols-4 gap-4">
+        <Card className="bg-card border-border p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Total Logs</p>
+              <p className="text-3xl font-bold text-foreground mt-2">
+                {formatLogCount(stats.totalLogs)}
+              </p>
+              <p className="text-xs text-green-600 mt-2">
+                +{stats.totalLogsChangePercent}% vs last period
+              </p>
+            </div>
+            <MiniSparkline
+              data={[80, 90, 100, 110, 120, 130, 140, 150, 160, 170]}
+              color="#16a34a"
+            />
+          </div>
+        </Card>
+
+        <Card className="bg-card border-border p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Error Count</p>
+              <p className="text-3xl font-bold text-foreground mt-2">{stats.errorCount.toLocaleString()}</p>
+              <div className="flex items-center gap-1 mt-2">
+                <Badge className="bg-red-100 text-red-800">
+                  ↑ {stats.errorChangePercent}% spike
+                </Badge>
+              </div>
+            </div>
+            <MiniSparkline
+              data={[50, 60, 70, 80, 90, 150, 200, 250, 280, 300]}
+              color="#dc2626"
+            />
+          </div>
+        </Card>
+
+        <Card className="bg-card border-border p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Affected Services</p>
+              <p className="text-3xl font-bold text-foreground mt-2">
+                {stats.affectedServices.count} of {stats.serviceCount}
+              </p>
+              <p className="text-xs text-orange-600 mt-2">
+                {stats.affectedServices.services.join(", ")}
+              </p>
+            </div>
+            <MiniSparkline
+              data={[60, 65, 70, 72, 75, 78, 80, 82, 85, 87]}
+              color="#ea580c"
+            />
+          </div>
+        </Card>
+
+        <Card className="bg-card border-border p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">AI Analyses Run</p>
+              <p className="text-3xl font-bold text-foreground mt-2">{stats.aiAnalysesRun}</p>
+              <p className="text-xs text-blue-600 mt-2">
+                {stats.aiCached} cached
+              </p>
+            </div>
+            <MiniSparkline
+              data={[100, 105, 110, 115, 120, 125, 130, 135, 140, 142]}
+              color="#2563eb"
+            />
+          </div>
+        </Card>
+      </div>
+
+      {/* Row 2: Main Charts */}
+      <div className="grid grid-cols-12 gap-4">
+        {/* Error Rate Over Time */}
+        <Card className="col-span-5 bg-card border-border p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-4">Error Rate Over Time</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={errorTimelineData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis
+                dataKey="timestamp"
+                tick={{ fill: "#6b7280", fontSize: 12 }}
+                axisLine={false}
+              />
+              <YAxis
+                tick={{ fill: "#6b7280", fontSize: 12 }}
+                axisLine={false}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
+              <ReferenceLine
+                y={300}
+                stroke="#dc2626"
+                strokeDasharray="5 5"
+                label="Alert Threshold"
+              />
+              {timelineServiceKeys.map((service, index) => (
+                <Area
+                  key={service}
+                  type="monotone"
+                  dataKey={service}
+                  stackId="1"
+                  stroke={getServiceColor(service, index)}
+                  fill={getServiceColor(service, index)}
+                  fillOpacity={0.6}
+                />
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>
+        </Card>
+
+        {/* Error Distribution by Service */}
+        <Card className="col-span-4 bg-card border-border p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-4">Error Distribution by Service</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={distributionData}
+                cx="50%"
+                cy="50%"
+                innerRadius={60}
+                outerRadius={90}
+                paddingAngle={2}
+                dataKey="value"
+                label={false}
+              >
+                {distributionData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #e5e7eb",
+                  color: "#000",
+                }}
+              />
+              <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
+                <tspan x="50%" dy="-0.3em" fontSize="12" fill="#6b7280">
+                  Total Errors
+                </tspan>
+                <tspan x="50%" dy="1.2em" fontSize="20" fill="#1f2937" fontWeight="bold">
+                  {stats.errorCount.toLocaleString()}
+                </tspan>
+              </text>
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="mt-4 space-y-1 text-xs">
+            {distributionData.map((item) => (
+              <div key={item.name} className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: item.color }}
+                  />
+                  <span className="text-muted-foreground">{item.name}</span>
+                </div>
+                <span className="text-foreground font-medium">{item.value}%</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Log Volume by Level */}
+        <Card className="col-span-3 bg-card border-border p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-4">Log Volume by Level</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={levelVolumeData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis
+                dataKey="name"
+                tick={{ fill: "#6b7280", fontSize: 12 }}
+                axisLine={false}
+              />
+              <YAxis
+                tick={{ fill: "#6b7280", fontSize: 12 }}
+                axisLine={false}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="value" fill="#3b82f6" radius={[8, 8, 0, 0]}>
+                {levelVolumeData.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={
+                      LevelColors[entry.name as keyof typeof LevelColors] || "#3b82f6"
+                    }
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </div>
+
+      {/* Row 3: Secondary Charts */}
+      <div className="grid grid-cols-2 gap-4">
+        {/* Error Heatmap */}
+        <Card className="bg-card border-border p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-4">Error Heatmap by Service × Hour</h3>
+          <div className="space-y-2">
+            {heatmapServices.map((service) => (
+              <div key={service} className="flex items-center gap-2">
+                <div className="w-32 text-xs text-muted-foreground truncate">{service}</div>
+                <div className="flex gap-0.5">
+                  {Array.from({ length: 24 }, (_, hour) => {
+                    const value = heatmapLookup.get(`${service}-${hour}`) ?? 0;
+                    const bgColor = heatmapColorClass(value);
+                    return (
+                      <div
+                        key={hour}
+                        className={`w-3 h-3 ${bgColor} rounded-sm`}
+                        title={`Hour ${hour}: ${value} errors`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <span>Low</span>
+              <div className="flex gap-1">
+                <div className="w-3 h-3 bg-gray-100 rounded-sm" />
+                <div className="w-3 h-3 bg-blue-200 rounded-sm" />
+                <div className="w-3 h-3 bg-amber-200 rounded-sm" />
+                <div className="w-3 h-3 bg-orange-400 rounded-sm" />
+                <div className="w-3 h-3 bg-red-500 rounded-sm" />
+              </div>
+              <span>High</span>
+            </div>
+          </div>
+        </Card>
+
+        {/* Top Error Types */}
+        <Card className="bg-card border-border p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-4">Top 5 Error Types</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart
+              data={topErrorsData}
+              layout="vertical"
+              margin={{ top: 5, right: 30, left: 200, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis type="number" tick={{ fill: "#6b7280", fontSize: 12 }} />
+              <YAxis
+                dataKey="name"
+                type="category"
+                tick={{ fill: "#6b7280", fontSize: 11 }}
+                width={195}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="value" fill="#dc2626" radius={[0, 8, 8, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </div>
+
+      {/* Row 4: Recent Critical Issues Table */}
+      <Card className="bg-card border-border p-4">
+        <h3 className="text-sm font-semibold text-foreground mb-4">Recent Critical Issues</h3>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-border hover:bg-transparent">
+                <TableHead className="text-muted-foreground">Severity</TableHead>
+                <TableHead className="text-muted-foreground">Service</TableHead>
+                <TableHead className="text-muted-foreground">Error Type</TableHead>
+                <TableHead className="text-muted-foreground text-right">Occurrences</TableHead>
+                <TableHead className="text-muted-foreground">Trend</TableHead>
+                <TableHead className="text-muted-foreground">Last Seen</TableHead>
+                <TableHead className="text-muted-foreground">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {issuesData.slice(0, 5).map((issue) => (
+                <TableRow key={issue.id} className="border-border">
+                  <TableCell>
+                    <Badge
+                      className={
+                        issue.severity === "CRITICAL"
+                          ? "bg-red-100 text-red-800"
+                          : issue.severity === "HIGH"
+                            ? "bg-orange-100 text-orange-800"
+                            : issue.severity === "MEDIUM"
+                              ? "bg-yellow-100 text-yellow-800"
+                              : "bg-blue-100 text-blue-800"
+                      }
+                    >
+                      {issue.severity}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm">{issue.service}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm">{issue.errorType}</TableCell>
+                  <TableCell className="text-right text-muted-foreground text-sm">
+                    {issue.occurrences.toLocaleString()}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      {issue.severity === "CRITICAL" ? (
+                        <TrendingUp className="w-4 h-4 text-red-500" />
+                      ) : (
+                        <TrendingDown className="w-4 h-4 text-green-500" />
+                      )}
+                      <LineChart width={40} height={20} data={issue.trend.map((v) => ({ value: v }))}>
+                        <Line
+                          type="monotone"
+                          dataKey="value"
+                          stroke={
+                            issue.severity === "CRITICAL"
+                              ? "#ef4444"
+                              : "#22c55e"
+                          }
+                          strokeWidth={1.5}
+                          dot={false}
+                        />
+                      </LineChart>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm" suppressHydrationWarning>
+                    {issue.lastSeen.toLocaleTimeString()}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-border text-foreground hover:bg-accent hover:text-accent-foreground"
+                      title="soon"
+                      disabled
+                    >
+                      <Brain className="w-3.5 h-3.5 mr-1" />
+                      Analyze
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+
+    </div>
+  );
+}
