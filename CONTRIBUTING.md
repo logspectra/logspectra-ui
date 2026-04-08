@@ -137,4 +137,8 @@ If requirements are ambiguous, ask in the issue before implementing.
 
 Early design notes and small implementation plans in issue comments are encouraged for faster review.
 
+## License
+
+Contributions to this repository are accepted under the Apache License, Version 2.0. By submitting a contribution, you agree that it may be distributed under that license alongside the project NOTICE file.
+
 Thanks for contributing.

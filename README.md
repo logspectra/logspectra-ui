@@ -150,3 +150,7 @@ For full-stack local setup, ensure backend and required infra are running before
 Please read `CONTRIBUTING.md` before opening a PR.
 
 Contribution is issue-first: create an issue and get alignment before implementation.
+
+## License
+
+This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
