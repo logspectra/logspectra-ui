@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProject } from "@/lib/project-context";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +40,7 @@ import {
 } from "recharts";
 import { AIAnalysisPanel } from "../../components/ai-analysis-panel";
 import { api } from "@/lib/api";
+import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import type { AnalysisStreamEvent } from "@/lib/api";
 import type { AnalysisResult, LogEntry } from "@/lib/types";
 import { Eye, Brain, Copy, Check, CheckCircle2 } from "lucide-react";
@@ -150,6 +151,30 @@ export default function LogExplorer() {
     service,
     level,
   ]);
+
+  const onLiveLog = useCallback(
+    (incoming: LogEntry) => {
+      const searchNeedle = search.trim().toLowerCase();
+      if (searchNeedle && !incoming.message.toLowerCase().includes(searchNeedle)) {
+        return;
+      }
+
+      setLogs((prev) => {
+        if (prev.some((entry) => entry.id === incoming.id)) return prev;
+        return [incoming, ...prev].slice(0, 200);
+      });
+      setTotalLogs((count) => count + 1);
+    },
+    [search]
+  );
+
+  useLiveLogStream({
+    projectId: selectedProject?.id,
+    enabled: !!selectedProject?.id,
+    service: service !== "all" ? service : undefined,
+    level: level !== "all" ? level : undefined,
+    onLog: onLiveLog,
+  });
 
   useEffect(() => {
     analysisAbortRef.current?.abort();

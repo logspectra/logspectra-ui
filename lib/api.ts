@@ -29,7 +29,7 @@ declare global {
   }
 }
 
-const DEFAULT_API_BASE_URL = "http://localhost:8080";
+const DEFAULT_API_BASE_URL = "http://localhost:8081";
 
 const getApiBaseUrl = (): string => {
   if (typeof window !== "undefined") {
@@ -447,6 +447,7 @@ export interface LogSearchParams {
   environment?: string;
   page?: number;
   size?: number;
+  projectId?: string;
 }
 
 export interface IssueQueryParams {
@@ -583,7 +584,9 @@ export const api = {
     if (params.traceId) queryParams.set("traceId", params.traceId);
     if (params.environment) queryParams.set("environment", params.environment);
 
-    const res = await apiRequest<PagedResponse<LogDto>>(`/api/v1/logs/search?${queryParams.toString()}`);
+    const res = await apiRequest<PagedResponse<LogDto>>(`/api/v1/logs/search?${queryParams.toString()}`, {
+      projectId: params.projectId,
+    });
 
     return {
       ...res,
@@ -632,6 +635,10 @@ export const api = {
     if (params.projectId) queryParams.set("projectId", params.projectId);
 
     const queryString = queryParams.toString();
+    // Same-origin SSE proxy avoids cross-origin streaming issues in the browser.
+    if (typeof window !== "undefined") {
+      return `/api/logs/stream${queryString ? `?${queryString}` : ""}`;
+    }
     return `${getApiBaseUrl()}/api/v1/logs/stream${queryString ? `?${queryString}` : ""}`;
   },
 

@@ -8,6 +8,8 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3050
+      - LOGSPECTRA_API_URL=${LOGSPECTRA_API_URL:-http://host.docker.internal:8081}
+      - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8081}
     container_name: logspectra-ui
     restart: unless-stopped
     healthcheck:

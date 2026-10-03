@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useProject } from "@/lib/project-context";
+import {
+  applyLiveLogToDashboard,
+  ensureDashboardSparklines,
+  type DashboardData,
+} from "@/lib/dashboard-data";
+import { useLiveLogStream } from "@/hooks/use-live-log-stream";
+import { useSmoothNumber } from "@/hooks/use-smooth-number";
+import { DashboardMiniSparkline } from "@/components/dashboard-mini-sparkline";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,7 +44,7 @@ import { TrendingUp, TrendingDown, Brain } from "lucide-react";
 
 export default function Dashboard() {
   const { selectedProject, timeRange, customDateRange } = useProject();
-  const [dashboardData, setDashboardData] = useState<Awaited<ReturnType<typeof api.getDashboardData>> | null>(null);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
 
   useEffect(() => {
     if (!selectedProject?.id) {
@@ -48,7 +56,7 @@ export default function Dashboard() {
     const load = async () => {
       try {
         const data = await api.getDashboardData(timeRange, customDateRange);
-        if (!cancelled) setDashboardData(data);
+        if (!cancelled) setDashboardData(ensureDashboardSparklines(data as DashboardData));
       } catch {
         if (!cancelled) setDashboardData(null);
       }
@@ -59,6 +67,16 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [selectedProject?.id, timeRange, customDateRange.from?.getTime(), customDateRange.to?.getTime()]);
+
+  const onLiveLog = useCallback((log: DashboardData["logs"][number]) => {
+    setDashboardData((current) => (current ? applyLiveLogToDashboard(current, log) : current));
+  }, []);
+
+  const { status: streamStatus } = useLiveLogStream({
+    projectId: selectedProject?.id,
+    enabled: !!selectedProject?.id && dashboardData !== null,
+    onLog: onLiveLog,
+  });
 
   const stats = useMemo(() => {
     const fallback = {
@@ -82,6 +100,12 @@ export default function Dashboard() {
   const topErrorsData = dashboardData?.topErrors || [];
   const issuesData = dashboardData?.issues || [];
   const heatmapData = dashboardData?.heatmap || [];
+  const statSparklines = dashboardData?.statSparklines;
+
+  const smoothTotalLogs = useSmoothNumber(stats.totalLogs);
+  const smoothErrorCount = useSmoothNumber(stats.errorCount);
+  const smoothAffectedCount = useSmoothNumber(stats.affectedServices.count);
+  const smoothAiAnalyses = useSmoothNumber(stats.aiAnalysesRun);
 
   // Light mode colors for services
   const ServiceColors: Record<string, string> = {
@@ -162,18 +186,6 @@ export default function Dashboard() {
     );
   };
 
-  const MiniSparkline = ({ data, color }: { data: number[]; color: string }) => (
-    <LineChart width={60} height={24} data={data.map((v, i) => ({ value: v, index: i }))}>
-      <Line
-        type="monotone"
-        dataKey="value"
-        stroke={color}
-        strokeWidth={2}
-        dot={false}
-      />
-    </LineChart>
-  );
-
   const formatLogCount = (value: number): string => {
     const abs = Math.abs(value);
 
@@ -193,12 +205,34 @@ export default function Dashboard() {
       {/* Project Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">{selectedProject?.name || 'Dashboard'}</h1>
+          <h1 className="text-3xl font-bold text-foreground">{selectedProject?.name || "Dashboard"}</h1>
           <p className="text-sm text-muted-foreground mt-1">Project ID: {selectedProject?.id}</p>
         </div>
-        <div className="text-right">
-          <p className="text-sm text-muted-foreground">Services</p>
-          <p className="text-2xl font-bold text-foreground">{stats.serviceCount || 0}</p>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span
+              className={`h-2 w-2 rounded-full ${
+                streamStatus === "live"
+                  ? "bg-green-500 animate-pulse"
+                  : streamStatus === "idle"
+                    ? "bg-zinc-500"
+                    : "bg-amber-500 animate-pulse"
+              }`}
+            />
+            <span>
+              {streamStatus === "live"
+                ? "Live updates on"
+                : streamStatus === "connecting"
+                  ? "Connecting live stream…"
+                  : streamStatus === "reconnecting"
+                    ? "Reconnecting…"
+                    : "Live updates off"}
+            </span>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-muted-foreground">Services</p>
+            <p className="text-2xl font-bold text-foreground">{stats.serviceCount || 0}</p>
+          </div>
         </div>
       </div>
 
@@ -208,15 +242,15 @@ export default function Dashboard() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Total Logs</p>
-              <p className="text-3xl font-bold text-foreground mt-2">
-                {formatLogCount(stats.totalLogs)}
+              <p className="text-3xl font-bold text-foreground mt-2 tabular-nums">
+                {formatLogCount(smoothTotalLogs)}
               </p>
               <p className="text-xs text-green-600 mt-2">
                 +{stats.totalLogsChangePercent}% vs last period
               </p>
             </div>
-            <MiniSparkline
-              data={[80, 90, 100, 110, 120, 130, 140, 150, 160, 170]}
+            <DashboardMiniSparkline
+              data={statSparklines?.totalLogs ?? []}
               color="#16a34a"
             />
           </div>
@@ -226,15 +260,17 @@ export default function Dashboard() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Error Count</p>
-              <p className="text-3xl font-bold text-foreground mt-2">{stats.errorCount.toLocaleString()}</p>
+              <p className="text-3xl font-bold text-foreground mt-2 tabular-nums">
+                {smoothErrorCount.toLocaleString()}
+              </p>
               <div className="flex items-center gap-1 mt-2">
                 <Badge className="bg-red-100 text-red-800">
                   ↑ {stats.errorChangePercent}% spike
                 </Badge>
               </div>
             </div>
-            <MiniSparkline
-              data={[50, 60, 70, 80, 90, 150, 200, 250, 280, 300]}
+            <DashboardMiniSparkline
+              data={statSparklines?.errorCount ?? []}
               color="#dc2626"
             />
           </div>
@@ -244,15 +280,15 @@ export default function Dashboard() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Affected Services</p>
-              <p className="text-3xl font-bold text-foreground mt-2">
-                {stats.affectedServices.count} of {stats.serviceCount}
+              <p className="text-3xl font-bold text-foreground mt-2 tabular-nums">
+                {smoothAffectedCount} of {stats.serviceCount}
               </p>
               <p className="text-xs text-orange-600 mt-2">
                 {stats.affectedServices.services.join(", ")}
               </p>
             </div>
-            <MiniSparkline
-              data={[60, 65, 70, 72, 75, 78, 80, 82, 85, 87]}
+            <DashboardMiniSparkline
+              data={statSparklines?.affectedServices ?? []}
               color="#ea580c"
             />
           </div>
@@ -262,13 +298,15 @@ export default function Dashboard() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-muted-foreground">AI Analyses Run</p>
-              <p className="text-3xl font-bold text-foreground mt-2">{stats.aiAnalysesRun}</p>
+              <p className="text-3xl font-bold text-foreground mt-2 tabular-nums">
+                {smoothAiAnalyses}
+              </p>
               <p className="text-xs text-blue-600 mt-2">
                 {stats.aiCached} cached
               </p>
             </div>
-            <MiniSparkline
-              data={[100, 105, 110, 115, 120, 125, 130, 135, 140, 142]}
+            <DashboardMiniSparkline
+              data={statSparklines?.aiAnalyses ?? []}
               color="#2563eb"
             />
           </div>

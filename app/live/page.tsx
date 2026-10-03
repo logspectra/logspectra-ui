@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useProject } from "@/lib/project-context";
-import { api, tokenStore } from "@/lib/api";
+import { api } from "@/lib/api";
+import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import type { LivePoint, LogEntry } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,94 +20,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Copy, Check } from "lucide-react";
-
-type StreamPayload =
-  | LogEntry
-  | {
-      log?: LogEntry;
-      point?: Partial<LivePoint>;
-      timestamp?: string | number;
-      errors?: number;
-      throughput?: number;
-      level?: LogEntry["level"];
-      service?: string;
-      traceId?: string;
-      message?: string;
-      id?: string;
-    };
-
-type StreamLogDocument = {
-  id?: string;
-  projectId?: string;
-  timestamp?: string | number;
-  level?: string;
-  service?: string;
-  traceId?: string;
-  spanId?: string;
-  thread?: string;
-  logger?: string;
-  message?: string;
-  endpoint?: string;
-  exception?: string;
-  stackTrace?: string;
-  host?: string;
-  environment?: string;
-};
-
-const SUPPORTED_LEVELS: Array<LogEntry["level"]> = ["DEBUG", "INFO", "WARN", "ERROR"];
-
-const normalizeLevel = (value?: string): LogEntry["level"] => {
-  if (!value) return "INFO";
-  const upper = value.toUpperCase();
-  return SUPPORTED_LEVELS.includes(upper as LogEntry["level"])
-    ? (upper as LogEntry["level"])
-    : "INFO";
-};
-
-const isLogLike = (value: unknown): value is Partial<LogEntry> => {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<LogEntry>;
-  return !!candidate.message && !!candidate.service && !!candidate.level;
-};
-
-const toLogEntry = (value: Partial<LogEntry>): LogEntry => ({
-  id: value.id || `${Date.now()}-${Math.random()}`,
-  timestamp: value.timestamp instanceof Date ? value.timestamp : new Date(value.timestamp || Date.now()),
-  level: normalizeLevel(value.level),
-  service: value.service || "unknown-service",
-  traceId: value.traceId || "",
-  message: value.message || "",
-  stackTrace: value.stackTrace,
-});
-
-const toLogEntryFromDocument = (value: StreamLogDocument): LogEntry => ({
-  id: value.id || `${Date.now()}-${Math.random()}`,
-  timestamp: new Date(value.timestamp || Date.now()),
-  level: normalizeLevel(value.level),
-  service: value.service || "unknown-service",
-  traceId: value.traceId || "",
-  message: value.endpoint ? `${value.message || ""} (${value.endpoint})` : (value.message || ""),
-  stackTrace: value.stackTrace || value.exception,
-});
-
-const toLivePoint = (
-  value: { timestamp?: string | number; errors?: number; throughput?: number },
-  fallbackTimestamp: number
-): LivePoint => ({
-  timestamp: (() => {
-    if (typeof value.timestamp === "number") {
-      // Normalize epoch millis to epoch seconds for chart bucketing.
-      return value.timestamp > 1_000_000_000_000 ? Math.floor(value.timestamp / 1000) : value.timestamp;
-    }
-    if (typeof value.timestamp === "string") {
-      const parsed = Date.parse(value.timestamp);
-      return Number.isNaN(parsed) ? fallbackTimestamp : Math.floor(parsed / 1000);
-    }
-    return fallbackTimestamp;
-  })(),
-  errors: value.errors ?? 0,
-  throughput: value.throughput ?? 0,
-});
 
 const formatTimeTick = (timestamp: number | string) => {
   const numeric = typeof timestamp === "number" ? timestamp : Number(timestamp);
@@ -177,226 +90,84 @@ export default function LiveStream() {
       .slice(-60);
   };
 
-  // Connect to SSE live stream endpoint and reconnect on disconnect.
+  const appendMetricsFromLog = useCallback((nextLog: LogEntry) => {
+    const secondBucket = Math.floor(Date.now() / 1000);
+    setLiveData((prev) => {
+      const updated = [...prev];
+      const last = updated[updated.length - 1];
+      if (last && Number(last.timestamp) === secondBucket) {
+        const lastPoint = { ...last };
+        lastPoint.throughput = (lastPoint.throughput || 0) + 1;
+        if (nextLog.level === "ERROR") {
+          lastPoint.errors = (lastPoint.errors || 0) + 1;
+        }
+        updated[updated.length - 1] = lastPoint;
+        return [...updated];
+      }
+
+      updated.push({
+        timestamp: secondBucket,
+        throughput: 1,
+        errors: nextLog.level === "ERROR" ? 1 : 0,
+      });
+      return updated.slice(-60);
+    });
+  }, []);
+
+  const onLiveLog = useCallback(
+    (log: LogEntry) => {
+      setLiveLogEntries((prev) => [...prev, log].slice(-200));
+      appendMetricsFromLog(log);
+    },
+    [appendMetricsFromLog]
+  );
+
+  const { status: streamStatus } = useLiveLogStream({
+    projectId: selectedProject?.id,
+    enabled: !!selectedProject?.id,
+    onLog: onLiveLog,
+  });
+
   useEffect(() => {
-    let isMounted = true;
-    let abortController: AbortController | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    if (!selectedProject?.id) {
+      setLiveLogEntries([]);
+      setLiveData([]);
+    }
+  }, [selectedProject?.id]);
 
-    const appendLivePoint = (nextPoint: { timestamp?: string | number; errors?: number; throughput?: number }) => {
-      setLiveData((prev) => {
-        const fallbackTimestamp = Number(prev[prev.length - 1]?.timestamp ?? Date.now()) + 1;
-        const mapped = toLivePoint(nextPoint, fallbackTimestamp);
-        const updated = [...prev, mapped];
-        return updated.slice(-60);
-      });
-    };
+  useEffect(() => {
+    if (!selectedProject?.id) return;
 
-    const appendLog = (nextLog: LogEntry) => {
-      setLiveLogEntries((prev) => {
-        const updated = [...prev, nextLog];
-        return updated.slice(-200);
-      });
-    };
+    let cancelled = false;
 
-    const appendMetricsFromLog = (nextLog: LogEntry) => {
-      // Use receive-time second buckets so bursts show as values > 1.
-      const secondBucket = Math.floor(Date.now() / 1000);
-      setLiveData((prev) => {
-        const updated = [...prev];
-        const last = updated[updated.length - 1];
-        if (last && Number(last.timestamp) === secondBucket) {
-          const lastPoint = { ...last };
-          lastPoint.throughput = (lastPoint.throughput || 0) + 1;
-          if (nextLog.level === "ERROR") {
-            lastPoint.errors = (lastPoint.errors || 0) + 1;
-          }
-          updated[updated.length - 1] = lastPoint;
-          return [...updated];
-        }
-
-        updated.push({
-          timestamp: secondBucket,
-          throughput: 1,
-          errors: nextLog.level === "ERROR" ? 1 : 0,
-        });
-        return updated.slice(-60);
-      });
-    };
-
-    const handleStreamPayload = (payload: StreamPayload) => {
-      if (!isMounted) return;
-
-      if (isLogLike(payload)) {
-        const log = toLogEntry(payload);
-        appendLog(log);
-        appendMetricsFromLog(log);
-        return;
-      }
-
-      const wrapped = payload as Exclude<StreamPayload, LogEntry>;
-
-      if (wrapped.log && isLogLike(wrapped.log)) {
-        const log = toLogEntry(wrapped.log);
-        appendLog(log);
-        appendMetricsFromLog(log);
-      }
-
-      if (wrapped.point) {
-        appendLivePoint(wrapped.point);
-        return;
-      }
-
-      if (wrapped.errors !== undefined || wrapped.throughput !== undefined) {
-        appendLivePoint({
-          timestamp: wrapped.timestamp,
-          errors: wrapped.errors,
-          throughput: wrapped.throughput,
-        });
-      }
-    };
-
-    const clearReconnectTimeout = () => {
-      if (!reconnectTimeout) return;
-      clearTimeout(reconnectTimeout);
-      reconnectTimeout = null;
-    };
-
-    const scheduleReconnect = () => {
-      if (!isMounted) return;
-      clearReconnectTimeout();
-      reconnectTimeout = setTimeout(() => {
-        void connectSse();
-      }, 3000);
-    };
-
-    const processSseData = (eventName: string, data: string) => {
-      if (!data) return;
-
-      try {
-        if (eventName === "log") {
-          const parsed = JSON.parse(data) as StreamLogDocument;
-          const log = toLogEntryFromDocument(parsed);
-          appendLog(log);
-          appendMetricsFromLog(log);
-          return;
-        }
-
-        const parsed = JSON.parse(data) as StreamPayload;
-        handleStreamPayload(parsed);
-      } catch {
-        // Ignore malformed stream payload.
-      }
-    };
-
-    const connectSse = async () => {
-      if (!isMounted) return;
-
-      clearReconnectTimeout();
-      if (abortController) {
-        abortController.abort();
-      }
-
-      abortController = new AbortController();
-
-      const streamUrl = api.getLiveLogsStreamUrl({ projectId: selectedProject?.id });
-
-      const headers = new Headers();
-      headers.set("Accept", "text/event-stream");
-      const token = tokenStore.get();
-      if (token) headers.set("Authorization", `Bearer ${token}`);
-      if (selectedProject?.id) headers.set("X-Project-Id", selectedProject.id);
-
-      try {
-        const response = await fetch(streamUrl, {
-          method: "GET",
-          headers,
-          signal: abortController.signal,
-          cache: "no-store",
-        });
-
-        if (!response.ok || !response.body) {
-          throw new Error(`SSE stream failed with status ${response.status}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (isMounted) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-          const events = buffer.split("\n\n");
-          buffer = events.pop() || "";
-
-          for (const rawEvent of events) {
-            let eventName = "message";
-            const dataLines: string[] = [];
-
-            for (const line of rawEvent.split("\n")) {
-              if (!line || line.startsWith(":")) continue;
-              if (line.startsWith("event:")) {
-                eventName = line.slice(6).trim();
-              } else if (line.startsWith("data:")) {
-                dataLines.push(line.slice(5).trimStart());
-              }
-            }
-
-            processSseData(eventName, dataLines.join("\n"));
-          }
-        }
-
-        if (isMounted) {
-          scheduleReconnect();
-        }
-      } catch (error) {
-        const wasAborted = error instanceof DOMException && error.name === "AbortError";
-        if (!wasAborted) {
-          scheduleReconnect();
-        }
-      }
-    };
-
-    const bootstrapAndConnect = async () => {
+    const loadHistory = async () => {
       try {
         const window = resolveLiveBootstrapWindow(timeRange, customDateRange);
-
         const searchResult = await api.searchLogs({
           from: window.from,
           to: window.to,
           page: 0,
           size: 200,
+          projectId: selectedProject.id,
         });
 
         const latestLogs = [...(searchResult.content || [])].sort(
           (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
         );
-        if (!isMounted) return;
-
+        if (cancelled) return;
         setLiveLogEntries(latestLogs);
         setLiveData(buildMetricsFromLogs(latestLogs));
       } catch {
-        if (isMounted) {
+        if (!cancelled) {
           setLiveLogEntries([]);
           setLiveData([]);
         }
       }
-
-      if (isMounted) {
-        await connectSse();
-      }
     };
 
-    void bootstrapAndConnect();
-
+    void loadHistory();
     return () => {
-      isMounted = false;
-      clearReconnectTimeout();
-      if (abortController) {
-        abortController.abort();
-      }
+      cancelled = true;
     };
   }, [selectedProject?.id, timeRange, customDateRange.from?.getTime(), customDateRange.to?.getTime()]);
 
@@ -427,8 +198,25 @@ export default function LiveStream() {
     );
   };
 
+  const streamStatusLabel =
+    streamStatus === "live"
+      ? "SSE connected"
+      : streamStatus === "connecting"
+        ? "Connecting…"
+        : streamStatus === "reconnecting"
+          ? "Reconnecting…"
+          : "Select a project";
+
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+        <span
+          className={`h-2 w-2 rounded-full ${
+            streamStatus === "live" ? "bg-green-500 animate-pulse" : streamStatus === "idle" ? "bg-zinc-500" : "bg-amber-500 animate-pulse"
+          }`}
+        />
+        <span>{streamStatusLabel}</span>
+      </div>
       {/* Live Charts */}
       <div className="grid grid-cols-2 gap-4">
         {/* Live Error Rate */}
