@@ -13,6 +13,10 @@ export type StreamLogDocument = {
   endpoint?: string;
   exception?: string;
   stackTrace?: string;
+  mdc?: {
+    traceId?: string;
+    endpoint?: string;
+  };
 };
 
 const SUPPORTED_LEVELS: Array<LogEntry["level"]> = ["DEBUG", "INFO", "WARN", "ERROR"];
@@ -42,12 +46,15 @@ const parseTimestamp = (value?: string | number | number[]): Date => {
   return new Date();
 };
 
+const resolveTraceId = (value: StreamLogDocument): string =>
+  value.traceId?.trim() || value.mdc?.traceId?.trim() || "";
+
 export const logEntryFromStreamDocument = (value: StreamLogDocument): LogEntry => ({
   id: value.id || `${Date.now()}-${Math.random()}`,
   timestamp: parseTimestamp(value.timestamp),
   level: normalizeLevel(value.level),
   service: value.service || "unknown-service",
-  traceId: value.traceId || "",
+  traceId: resolveTraceId(value),
   message: value.endpoint ? `${value.message || ""} (${value.endpoint})` : (value.message || ""),
   stackTrace: value.stackTrace || value.exception,
 });

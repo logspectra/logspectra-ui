@@ -8,6 +8,7 @@ import {
   type DashboardData,
 } from "@/lib/dashboard-data";
 import { useLiveLogStream } from "@/hooks/use-live-log-stream";
+import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import { useSmoothNumber } from "@/hooks/use-smooth-number";
 import { DashboardMiniSparkline } from "@/components/dashboard-mini-sparkline";
 import { Card } from "@/components/ui/card";
@@ -44,6 +45,7 @@ import { TrendingUp, TrendingDown, Brain } from "lucide-react";
 
 export default function Dashboard() {
   const { selectedProject, timeRange, customDateRange } = useProject();
+  const { sseEnabled } = useLiveStreamPreference();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
 
   useEffect(() => {
@@ -74,7 +76,7 @@ export default function Dashboard() {
 
   const { status: streamStatus } = useLiveLogStream({
     projectId: selectedProject?.id,
-    enabled: !!selectedProject?.id && dashboardData !== null,
+    enabled: sseEnabled && !!selectedProject?.id && dashboardData !== null,
     onLog: onLiveLog,
   });
 

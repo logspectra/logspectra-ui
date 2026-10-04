@@ -41,12 +41,14 @@ import {
 import { AIAnalysisPanel } from "../../components/ai-analysis-panel";
 import { api } from "@/lib/api";
 import { useLiveLogStream } from "@/hooks/use-live-log-stream";
+import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import type { AnalysisStreamEvent } from "@/lib/api";
 import type { AnalysisResult, LogEntry } from "@/lib/types";
 import { Eye, Brain, Copy, Check, CheckCircle2 } from "lucide-react";
 
 export default function LogExplorer() {
   const { selectedProject, timeRange, customDateRange } = useProject();
+  const { sseEnabled } = useLiveStreamPreference();
   const [search, setSearch] = useState("");
   const [service, setService] = useState("all");
   const [level, setLevel] = useState("all");
@@ -170,7 +172,7 @@ export default function LogExplorer() {
 
   useLiveLogStream({
     projectId: selectedProject?.id,
-    enabled: !!selectedProject?.id,
+    enabled: sseEnabled && !!selectedProject?.id,
     service: service !== "all" ? service : undefined,
     level: level !== "all" ? level : undefined,
     onLog: onLiveLog,

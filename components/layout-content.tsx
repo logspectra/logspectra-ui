@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useProject } from '@/lib/project-context';
 import { Sidebar } from '@/components/sidebar';
 import { Header } from '@/components/header';
+import { LiveStreamProvider } from '@/lib/live-stream-context';
 
 function LayoutContentInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -46,13 +47,13 @@ function LayoutContentInner({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <>
+    <LiveStreamProvider>
       <Sidebar />
       <Header />
       <main className="ml-60 mt-16 p-6">
         {children}
       </main>
-    </>
+    </LiveStreamProvider>
   );
 }
 

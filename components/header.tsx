@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import type { DateRange } from "react-day-picker";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { useLiveStreamPreference } from "@/lib/live-stream-context";
 
 const TIME_RANGES = [
   { value: "1h", label: "1h" },
@@ -30,8 +34,11 @@ const TIME_RANGES = [
 ] as const;
 
 export function Header() {
+  const pathname = usePathname();
   const [isCustomDateOpen, setIsCustomDateOpen] = useState(false);
   const { timeRange, setTimeRange, customDateRange, setCustomDateRange } = useProject();
+  const { sseEnabled, setSseEnabled } = useLiveStreamPreference();
+  const showSseToggle = pathname !== "/live";
 
   const calendarRange: DateRange = {
     from: customDateRange.from,
@@ -103,12 +110,21 @@ export function Header() {
         </div>
       </div>
 
-      {/* Right: Live Status and Theme Toggle */}
+      {/* Right: optional SSE toggle (not on dedicated Live page) + theme */}
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-muted-foreground">Live</span>
-        </div>
+        {showSseToggle && (
+          <div className="flex items-center gap-2">
+            <Switch
+              id="header-sse-toggle"
+              checked={sseEnabled}
+              onCheckedChange={setSseEnabled}
+              aria-label="Toggle live log updates"
+            />
+            <Label htmlFor="header-sse-toggle" className="text-sm text-muted-foreground cursor-pointer">
+              Live updates
+            </Label>
+          </div>
+        )}
         <ThemeToggle />
       </div>
     </header>
