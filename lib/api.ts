@@ -20,6 +20,11 @@ import type {
   TimeSeriesPoint,
   User,
 } from "./types";
+import { createEmptyDashboardData } from "@/lib/dashboard-data";
+import { resolveDateWindow } from "@/lib/date-window";
+
+export { resolveDateWindow, isWithinDateWindow } from "@/lib/date-window";
+export type { ResolvedDateWindow, CustomDateRangeInput } from "@/lib/date-window";
 
 declare global {
   interface Window {
@@ -56,40 +61,12 @@ export interface AnalysisStreamEvent {
   timestamp?: string;
 }
 
-const timeRangeToHours = (timeRange: string | number): number => {
-  if (typeof timeRange === "number") return timeRange;
-
-  switch (timeRange) {
-    case "1h":
-      return 1;
-    case "6h":
-      return 6;
-    case "24h":
-      return 24;
-    case "7d":
-      return 24 * 7;
-    case "30d":
-      return 24 * 30;
-    default:
-      return 24;
-  }
-};
-
 const getDateWindow = (timeRange: string | number, customDateRange?: CustomDateRange): { from: string; to: string } => {
-  if (
-    timeRange === "custom" &&
-    customDateRange?.from instanceof Date &&
-    customDateRange?.to instanceof Date
-  ) {
-    const from = new Date(customDateRange.from);
-    const to = new Date(customDateRange.to);
-    from.setHours(0, 0, 0, 0);
-    to.setHours(23, 59, 59, 999);
-    return { from: from.toISOString(), to: to.toISOString() };
+  const window = resolveDateWindow(timeRange, customDateRange);
+  if (!window) {
+    throw new Error("Custom time range requires both start and end dates");
   }
-
-  const hours = timeRangeToHours(timeRange);
-  return { from: isoHoursAgo(hours), to: nowIso() };
+  return { from: window.from, to: window.to };
 };
 
 const durationHoursForCustomRange = (customDateRange?: CustomDateRange): number | null => {
@@ -104,10 +81,10 @@ const durationHoursForCustomRange = (customDateRange?: CustomDateRange): number 
   return Math.max(1, Math.ceil(diffMs / 3600_000));
 };
 
-const normalizeIssueWindow = (timeRange: string, customDateRange?: CustomDateRange): string => {
+const normalizeIssueWindow = (timeRange: string, customDateRange?: CustomDateRange): string | null => {
   if (timeRange === "custom") {
     const customHours = durationHoursForCustomRange(customDateRange);
-    if (customHours === null) return "24h";
+    if (customHours === null) return null;
     if (customHours <= 1) return "1h";
     if (customHours <= 6) return "6h";
     if (customHours <= 24) return "24h";
@@ -132,9 +109,6 @@ const handleUnauthorized = (): void => {
     window.location.assign("/login");
   }
 };
-
-const isoHoursAgo = (hours: number): string => new Date(Date.now() - hours * 3600_000).toISOString();
-const nowIso = (): string => new Date().toISOString();
 
 const toUtcIsoString = (value: string | Date): string => {
   const date = value instanceof Date ? value : new Date(value);
@@ -604,8 +578,9 @@ export const api = {
   },
 
   getLogs: async (timeRange: string | number = "24h", customDateRange?: CustomDateRange): Promise<LogEntry[]> => {
-    const { from, to } = getDateWindow(timeRange, customDateRange);
-    const res = await api.searchLogs({ from, to, size: 200, page: 0 });
+    const window = resolveDateWindow(timeRange, customDateRange);
+    if (!window) return [];
+    const res = await api.searchLogs({ from: window.from, to: window.to, size: 200, page: 0 });
     return res.content || [];
   },
 
@@ -662,6 +637,7 @@ export const api = {
     queryParams?: IssueQueryParams
   ): Promise<IssueGroup[]> => {
     const window = normalizeIssueWindow(timeRange, customDateRange);
+    if (!window) return [];
     const params = new URLSearchParams({
       window,
       size: String(queryParams?.size ?? 100),
@@ -738,7 +714,11 @@ export const api = {
   ): Promise<AnalysisResult | null> => streamAnalyzeLog(traceId, provider, handlers),
 
   getDashboardData: async (timeRange = "24h", customDateRange?: CustomDateRange) => {
-    const { from, to } = getDateWindow(timeRange, customDateRange);
+    const window = resolveDateWindow(timeRange, customDateRange);
+    if (!window) {
+      return createEmptyDashboardData();
+    }
+    const { from, to } = window;
 
     const [logs, issues, agg, statsDto] = await Promise.all([
       api.getLogs(timeRange, customDateRange),

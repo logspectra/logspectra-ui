@@ -268,3 +268,39 @@ export function applyLiveLogToDashboard(data: DashboardData, log: LogEntry): Das
     heatmap: bumpHeatmap(data.heatmap, log.service, hour),
   };
 }
+
+const emptyStats = (): DashboardStats => ({
+  totalLogs: 0,
+  totalLogsChangePercent: 0,
+  errorCount: 0,
+  errorChangePercent: 0,
+  affectedServices: { count: 0, services: [] },
+  aiAnalysesRun: 0,
+  aiCached: 0,
+  aiSaved: 0,
+  totalServices: [],
+  serviceCount: 0,
+});
+
+/** Placeholder while custom range is incomplete or before first fetch. */
+export function createEmptyDashboardData(): DashboardData {
+  const stats = emptyStats();
+  return {
+    stats,
+    statSparklines: seedStatSparklines(stats),
+    logs: [],
+    issues: [],
+    errorTimeline: [],
+    distribution: [],
+    levelVolume: [],
+    topErrors: [],
+    weeklyTrend: [],
+    resolutionDist: [],
+    aiUsage: [],
+    ingestionRate: [],
+    severityMix: [],
+    topEndpoints: [],
+    heatmap: [],
+    liveErrors: Array.from({ length: 60 }, (_, i) => ({ timestamp: i, errors: 0, throughput: 0 })),
+  };
+}

@@ -101,7 +101,12 @@ export function Header() {
                 <Calendar
                   mode="range"
                   selected={calendarRange}
-                  onSelect={(range) => void setCustomDateRange(range || {})}
+                  onSelect={(range) => {
+                    void setCustomDateRange(range || {});
+                    if (range?.from && range?.to) {
+                      void setTimeRange("custom");
+                    }
+                  }}
                   numberOfMonths={2}
                 />
               </PopoverContent>

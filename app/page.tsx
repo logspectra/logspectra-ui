@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProject } from "@/lib/project-context";
 import {
   applyLiveLogToDashboard,
+  createEmptyDashboardData,
   ensureDashboardSparklines,
   type DashboardData,
 } from "@/lib/dashboard-data";
+import { isWithinDateWindow, resolveDateWindow } from "@/lib/date-window";
 import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import { useSmoothNumber } from "@/hooks/use-smooth-number";
@@ -48,9 +50,21 @@ export default function Dashboard() {
   const { sseEnabled } = useLiveStreamPreference();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
 
+  const dateWindow = useMemo(
+    () => resolveDateWindow(timeRange, customDateRange),
+    [timeRange, customDateRange.from?.getTime(), customDateRange.to?.getTime()]
+  );
+  const dateWindowRef = useRef(dateWindow);
+  dateWindowRef.current = dateWindow;
+
   useEffect(() => {
     if (!selectedProject?.id) {
       setDashboardData(null);
+      return;
+    }
+
+    if (!dateWindow) {
+      setDashboardData(createEmptyDashboardData());
       return;
     }
 
@@ -68,15 +82,19 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [selectedProject?.id, timeRange, customDateRange.from?.getTime(), customDateRange.to?.getTime()]);
+  }, [selectedProject?.id, timeRange, customDateRange.from?.getTime(), customDateRange.to?.getTime(), dateWindow?.from, dateWindow?.to]);
 
   const onLiveLog = useCallback((log: DashboardData["logs"][number]) => {
+    const window = dateWindowRef.current;
+    if (!window || !isWithinDateWindow(log.timestamp, window)) {
+      return;
+    }
     setDashboardData((current) => (current ? applyLiveLogToDashboard(current, log) : current));
   }, []);
 
   const { status: streamStatus } = useLiveLogStream({
     projectId: selectedProject?.id,
-    enabled: sseEnabled && !!selectedProject?.id && dashboardData !== null,
+    enabled: sseEnabled && !!selectedProject?.id && dashboardData !== null && dateWindow !== null,
     onLog: onLiveLog,
   });
 

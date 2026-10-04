@@ -20,6 +20,7 @@ import {
 } from "recharts";
 import { Card } from "@/components/ui/card";
 import { api } from "@/lib/api";
+import { resolveDateWindow } from "@/lib/date-window";
 
 export default function Analytics() {
   const { selectedProject, timeRange, customDateRange } = useProject();
@@ -27,6 +28,11 @@ export default function Analytics() {
 
   useEffect(() => {
     if (!selectedProject?.id) {
+      setDashboardData(null);
+      return;
+    }
+
+    if (!resolveDateWindow(timeRange, customDateRange)) {
       setDashboardData(null);
       return;
     }
