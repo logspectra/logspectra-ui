@@ -8,7 +8,7 @@ import {
   ensureDashboardSparklines,
   type DashboardData,
 } from "@/lib/dashboard-data";
-import { isWithinDateWindow, resolveDateWindow } from "@/lib/date-window";
+import { isWithinLiveDateWindow, resolveDateWindow } from "@/lib/date-window";
 import { resolveTimelineServiceKeys } from "@/lib/error-timeline";
 import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import { useLiveStreamPreference } from "@/lib/live-stream-context";
@@ -82,9 +82,12 @@ export default function Dashboard() {
     };
   }, [selectedProject?.id, timeRange, customDateRange.from?.getTime(), customDateRange.to?.getTime(), dateWindow?.from, dateWindow?.to]);
 
+  const timeRangeRef = useRef(timeRange);
+  timeRangeRef.current = timeRange;
+
   const onLiveLog = useCallback((log: DashboardData["logs"][number]) => {
     const window = dateWindowRef.current;
-    if (!window || !isWithinDateWindow(log.timestamp, window)) {
+    if (!window || !isWithinLiveDateWindow(log.timestamp, timeRangeRef.current, window)) {
       return;
     }
     setDashboardData((current) => (current ? applyLiveLogToDashboard(current, log) : current));

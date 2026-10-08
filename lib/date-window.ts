@@ -53,3 +53,21 @@ export function isWithinDateWindow(timestamp: Date, window: ResolvedDateWindow):
   const ms = timestamp.getTime();
   return ms >= window.fromMs && ms <= window.toMs;
 }
+
+/**
+ * Rolling preset ranges (1h, 24h, …) freeze `window.toMs` at resolve time; live SSE logs need a sliding upper bound.
+ */
+export function isWithinLiveDateWindow(
+  timestamp: Date,
+  timeRange: string | number,
+  window: ResolvedDateWindow
+): boolean {
+  const ms = timestamp.getTime();
+  if (timeRange === "custom") {
+    return isWithinDateWindow(timestamp, window);
+  }
+  const hours = timeRangeToHours(timeRange);
+  const now = Date.now();
+  const fromMs = now - hours * 3600_000;
+  return ms >= fromMs && ms <= now;
+}
