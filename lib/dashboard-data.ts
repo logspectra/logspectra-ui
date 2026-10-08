@@ -1,4 +1,4 @@
-import { formatBucketLabel, hourBucketKey } from "@/lib/error-timeline";
+import { formatBucketLabel, timelineBucketKey } from "@/lib/error-timeline";
 import { serviceColor } from "@/lib/service-colors";
 import type {
   BarPoint,
@@ -179,7 +179,7 @@ const bumpErrorTimeline = (
   }
 
   const point: TimeSeriesPoint = {
-    timestamp: formatBucketLabel(bucketIso),
+    timestamp: formatBucketLabel(bucketIso, 1000),
     _sortKey: bucketIso,
   };
   for (const svc of services) {
@@ -256,7 +256,7 @@ export function applyLiveLogToDashboard(data: DashboardData, log: LogEntry): Das
     errorCount: stats.errorCount + 1,
   };
 
-  const key = hourBucketKey(log.timestamp);
+  const key = timelineBucketKey(log.timestamp, 1000);
   const hour = hourUtc(log.timestamp);
   const errorLabel = log.stackTrace?.split("\n")[0]?.trim() || log.message.slice(0, 80);
 

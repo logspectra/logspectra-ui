@@ -63,24 +63,24 @@ export default function LiveStream() {
   const appendMetricsFromLog = useCallback((nextLog: LogEntry) => {
     const secondBucket = Math.floor(Date.now() / 1000);
     setLiveData((prev) => {
-      const updated = [...prev];
-      const last = updated[updated.length - 1];
-      if (last && Number(last.timestamp) === secondBucket) {
-        const lastPoint = { ...last };
-        lastPoint.throughput = (lastPoint.throughput || 0) + 1;
-        if (nextLog.level === "ERROR") {
-          lastPoint.errors = (lastPoint.errors || 0) + 1;
-        }
-        updated[updated.length - 1] = lastPoint;
-        return [...updated];
+      const bySecond = new Map<number, LivePoint>();
+      for (const point of prev) {
+        bySecond.set(Number(point.timestamp), { ...point });
       }
-
-      updated.push({
-        timestamp: secondBucket,
-        throughput: 1,
-        errors: nextLog.level === "ERROR" ? 1 : 0,
-      });
-      return updated.slice(-60);
+      for (let s = secondBucket - 59; s <= secondBucket; s++) {
+        if (!bySecond.has(s)) {
+          bySecond.set(s, { timestamp: s, errors: 0, throughput: 0 });
+        }
+      }
+      const current = bySecond.get(secondBucket)!;
+      current.throughput = (current.throughput || 0) + 1;
+      if (nextLog.level === "ERROR") {
+        current.errors = (current.errors || 0) + 1;
+      }
+      bySecond.set(secondBucket, current);
+      return Array.from(bySecond.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([, value]) => value);
     });
   }, []);
 
@@ -206,10 +206,13 @@ export default function LiveStream() {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={liveData}>
+            <LineChart data={liveData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
               <XAxis
+                type="number"
                 dataKey="timestamp"
+                scale="time"
+                domain={["dataMin", "dataMax"]}
                 tick={{ fill: "#71717a", fontSize: 10 }}
                 tickFormatter={formatTimeTick}
               />
@@ -219,14 +222,15 @@ export default function LiveStream() {
                 domain={[0, "dataMax + 1"]}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Area
+              <Line
                 type="monotone"
                 dataKey="errors"
                 stroke="#ef4444"
-                fill="#ef4444"
-                fillOpacity={0.6}
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
               />
-            </AreaChart>
+            </LineChart>
           </ResponsiveContainer>
         </Card>
 

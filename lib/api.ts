@@ -23,9 +23,11 @@ import type {
 import { createEmptyDashboardData } from "@/lib/dashboard-data";
 import { resolveDateWindow } from "@/lib/date-window";
 import {
+  bucketMsForWindow,
   buildErrorTimelineFromAggregations,
   buildErrorTimelineFromIngestion,
   buildErrorTimelineFromLogs,
+  densifyErrorTimeline,
 } from "@/lib/error-timeline";
 import { normalizeIssueWindow } from "@/lib/time-range";
 
@@ -703,7 +705,7 @@ export const api = {
       api.getIssues(timeRange, customDateRange),
       apiRequest<AggregationDto>(`/api/v1/logs/aggregations?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
       apiRequest<DashboardStatsDto>(`/api/v1/dashboard/stats?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
-      api.searchLogs({ from, to, level: "ERROR", size: 500, page: 0 }).catch(() => ({ content: [] as LogEntry[], totalElements: 0 })),
+      api.searchLogs({ from, to, level: "ERROR", size: 2000, page: 0 }).catch(() => ({ content: [] as LogEntry[], totalElements: 0 })),
     ]);
 
     const aggServices = agg?.services ?? [];
@@ -795,6 +797,17 @@ export const api = {
     }
     if (errorTimeline.length === 0) {
       errorTimeline = buildErrorTimelineFromIngestion(ingestionRate);
+    }
+
+    const bucketMs = bucketMsForWindow(window.fromMs, window.toMs);
+    if (errorTimeline.length > 0) {
+      errorTimeline = densifyErrorTimeline(
+        errorTimeline,
+        serviceNames,
+        window.fromMs,
+        window.toMs,
+        bucketMs
+      );
     }
 
     return {

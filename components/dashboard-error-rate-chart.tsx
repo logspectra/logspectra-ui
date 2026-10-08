@@ -2,10 +2,10 @@
 
 import { useCallback, useMemo, useState, type ComponentType } from "react";
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
   Legend,
+  Line,
+  LineChart,
   ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
@@ -18,27 +18,29 @@ import type { TimeSeriesPoint } from "@/lib/types";
 
 type ChartPoint = TimeSeriesPoint & { _epochMs: number };
 
-function attachEpochMs(data: TimeSeriesPoint[], window: ResolvedDateWindow): ChartPoint[] {
-  if (data.length === 0) return [];
-  const span = Math.max(1, window.toMs - window.fromMs);
+function attachEpochMs(data: TimeSeriesPoint[]): ChartPoint[] {
   return data.map((point, index) => {
     const sortKey = point._sortKey;
     const parsed =
       typeof sortKey === "string" ? new Date(sortKey).getTime() : Number.NaN;
-    const epochMs = !Number.isNaN(parsed)
-      ? parsed
-      : window.fromMs + (data.length <= 1 ? 0 : (index / (data.length - 1)) * span);
+    const epochMs = !Number.isNaN(parsed) ? parsed : index;
     return { ...point, _epochMs: epochMs };
   });
 }
 
-function epochFromChartIndex(
-  data: ChartPoint[],
-  index: number,
-  window: ResolvedDateWindow
-): number {
+function formatEpochTick(ms: number): string {
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function epochFromChartIndex(data: ChartPoint[], index: number): number {
   if (index < 0 || index >= data.length) {
-    return window.fromMs;
+    return Date.now();
   }
   return data[index]._epochMs;
 }
@@ -58,10 +60,7 @@ export function DashboardErrorRateChart({
   onBrushRange: (from: Date, to: Date) => void;
   customTooltip: ComponentType<any>;
 }) {
-  const chartData = useMemo(
-    () => (dateWindow ? attachEpochMs(data, dateWindow) : []),
-    [data, dateWindow]
-  );
+  const chartData = useMemo(() => attachEpochMs(data), [data]);
 
   const [brushLeftIndex, setBrushLeftIndex] = useState<number | null>(null);
   const [brushRightIndex, setBrushRightIndex] = useState<number | null>(null);
@@ -96,8 +95,8 @@ export function DashboardErrorRateChart({
       clearBrush();
       return;
     }
-    const fromMs = epochFromChartIndex(chartData, left, dateWindow);
-    const toMs = epochFromChartIndex(chartData, right, dateWindow);
+    const fromMs = epochFromChartIndex(chartData, left);
+    const toMs = epochFromChartIndex(chartData, right);
     if (toMs > fromMs) {
       onBrushRange(new Date(fromMs), new Date(toMs));
     }
@@ -106,11 +105,11 @@ export function DashboardErrorRateChart({
 
   const refLeft =
     brushLeftIndex != null && brushRightIndex != null
-      ? chartData[Math.min(brushLeftIndex, brushRightIndex)]?.timestamp
+      ? chartData[Math.min(brushLeftIndex, brushRightIndex)]?._epochMs
       : undefined;
   const refRight =
     brushLeftIndex != null && brushRightIndex != null
-      ? chartData[Math.max(brushLeftIndex, brushRightIndex)]?.timestamp
+      ? chartData[Math.max(brushLeftIndex, brushRightIndex)]?._epochMs
       : undefined;
 
   const TooltipContent = customTooltip;
@@ -126,6 +125,13 @@ export function DashboardErrorRateChart({
     return max;
   }, [chartData, serviceKeys]);
 
+  const xDomain = useMemo((): [number, number] => {
+    if (chartData.length === 0) return [0, 1];
+    const min = chartData[0]._epochMs;
+    const max = chartData[chartData.length - 1]._epochMs;
+    return [min, max];
+  }, [chartData]);
+
   if (chartData.length === 0 || serviceKeys.length === 0) {
     return (
       <div className="flex h-[300px] items-center justify-center rounded-md border border-dashed border-border text-sm text-muted-foreground">
@@ -140,7 +146,7 @@ export function DashboardErrorRateChart({
         Drag across the chart to zoom the dashboard time range (Grafana-style).
       </p>
       <ResponsiveContainer width="100%" height={300}>
-        <AreaChart
+        <LineChart
           data={chartData}
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
@@ -151,9 +157,17 @@ export function DashboardErrorRateChart({
           style={{ cursor: "crosshair" }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="timestamp" tick={{ fill: "#6b7280", fontSize: 12 }} axisLine={false} />
-          <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} axisLine={false} />
-          <Tooltip content={<TooltipContent />} />
+          <XAxis
+            type="number"
+            dataKey="_epochMs"
+            domain={xDomain}
+            scale="time"
+            tick={{ fill: "#6b7280", fontSize: 12 }}
+            tickFormatter={formatEpochTick}
+            axisLine={false}
+          />
+          <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} axisLine={false} allowDecimals={false} />
+          <Tooltip content={<TooltipContent />} labelFormatter={(ms) => formatEpochTick(Number(ms))} />
           <Legend />
           {maxY > 0 && maxY < 250 ? (
             <ReferenceLine
@@ -163,22 +177,22 @@ export function DashboardErrorRateChart({
               label="Alert threshold"
             />
           ) : null}
-          {refLeft && refRight && refLeft !== refRight ? (
+          {refLeft != null && refRight != null && refLeft !== refRight ? (
             <ReferenceArea x1={refLeft} x2={refRight} strokeOpacity={0.2} fill="#3b82f6" fillOpacity={0.25} />
           ) : null}
           {serviceKeys.map((service, index) => (
-            <Area
+            <Line
               key={service}
               type="monotone"
               dataKey={service}
-              stackId="1"
               stroke={getServiceColor(service, index)}
-              fill={getServiceColor(service, index)}
-              fillOpacity={0.6}
+              strokeWidth={2}
+              dot={false}
               isAnimationActive={false}
+              connectNulls
             />
           ))}
-        </AreaChart>
+        </LineChart>
       </ResponsiveContainer>
     </div>
   );
