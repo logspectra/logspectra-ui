@@ -21,12 +21,15 @@ type ChartPoint = TimeSeriesPoint & { _epochMs: number };
 function attachEpochMs(data: TimeSeriesPoint[], window: ResolvedDateWindow): ChartPoint[] {
   if (data.length === 0) return [];
   const span = Math.max(1, window.toMs - window.fromMs);
-  return data.map((point, index) => ({
-    ...point,
-    _epochMs:
-      window.fromMs +
-      (data.length <= 1 ? 0 : (index / (data.length - 1)) * span),
-  }));
+  return data.map((point, index) => {
+    const sortKey = point._sortKey;
+    const parsed =
+      typeof sortKey === "string" ? new Date(sortKey).getTime() : Number.NaN;
+    const epochMs = !Number.isNaN(parsed)
+      ? parsed
+      : window.fromMs + (data.length <= 1 ? 0 : (index / (data.length - 1)) * span);
+    return { ...point, _epochMs: epochMs };
+  });
 }
 
 function epochFromChartIndex(
@@ -112,6 +115,25 @@ export function DashboardErrorRateChart({
 
   const TooltipContent = customTooltip;
 
+  const maxY = useMemo(() => {
+    let max = 0;
+    for (const point of chartData) {
+      for (const key of serviceKeys) {
+        const v = point[key];
+        if (typeof v === "number" && v > max) max = v;
+      }
+    }
+    return max;
+  }, [chartData, serviceKeys]);
+
+  if (chartData.length === 0 || serviceKeys.length === 0) {
+    return (
+      <div className="flex h-[300px] items-center justify-center rounded-md border border-dashed border-border text-sm text-muted-foreground">
+        No error metrics in this time range.
+      </div>
+    );
+  }
+
   return (
     <div>
       <p className="text-xs text-muted-foreground mb-2">
@@ -133,7 +155,14 @@ export function DashboardErrorRateChart({
           <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} axisLine={false} />
           <Tooltip content={<TooltipContent />} />
           <Legend />
-          <ReferenceLine y={300} stroke="#dc2626" strokeDasharray="5 5" label="Alert Threshold" />
+          {maxY > 0 && maxY < 250 ? (
+            <ReferenceLine
+              y={Math.max(10, Math.round(maxY * 1.5))}
+              stroke="#dc2626"
+              strokeDasharray="5 5"
+              label="Alert threshold"
+            />
+          ) : null}
           {refLeft && refRight && refLeft !== refRight ? (
             <ReferenceArea x1={refLeft} x2={refRight} strokeOpacity={0.2} fill="#3b82f6" fillOpacity={0.25} />
           ) : null}

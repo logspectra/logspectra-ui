@@ -9,6 +9,7 @@ import {
   type DashboardData,
 } from "@/lib/dashboard-data";
 import { isWithinDateWindow, resolveDateWindow } from "@/lib/date-window";
+import { resolveTimelineServiceKeys } from "@/lib/error-timeline";
 import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import { useSmoothNumber } from "@/hooks/use-smooth-number";
@@ -152,17 +153,10 @@ export default function Dashboard() {
     "#ec4899",
   ];
 
-  const timelineServiceKeys = (
-    stats.totalServices.length > 0
-      ? stats.totalServices
-      : Array.from(
-          new Set(
-            errorTimelineData.flatMap((point) =>
-              Object.keys(point).filter((key) => key !== "timestamp")
-            )
-          )
-        )
-  ).filter((service) => errorTimelineData.some((point) => typeof point[service] === "number"));
+  const timelineServiceKeys = resolveTimelineServiceKeys(
+    errorTimelineData,
+    stats.totalServices.length > 0 ? stats.totalServices : []
+  );
 
   const getServiceColor = (service: string, index: number): string => {
     if (ServiceColors[service]) return ServiceColors[service];

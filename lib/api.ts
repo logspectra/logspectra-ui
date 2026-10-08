@@ -22,6 +22,11 @@ import type {
 } from "./types";
 import { createEmptyDashboardData } from "@/lib/dashboard-data";
 import { resolveDateWindow } from "@/lib/date-window";
+import {
+  buildErrorTimelineFromAggregations,
+  buildErrorTimelineFromIngestion,
+  buildErrorTimelineFromLogs,
+} from "@/lib/error-timeline";
 import { normalizeIssueWindow } from "@/lib/time-range";
 
 export { resolveDateWindow, isWithinDateWindow } from "@/lib/date-window";
@@ -693,46 +698,37 @@ export const api = {
     }
     const { from, to } = window;
 
-    const [logs, issues, agg, statsDto] = await Promise.all([
+    const [logs, issues, agg, statsDto, errorLogsPage] = await Promise.all([
       api.getLogs(timeRange, customDateRange),
       api.getIssues(timeRange, customDateRange),
       apiRequest<AggregationDto>(`/api/v1/logs/aggregations?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
       apiRequest<DashboardStatsDto>(`/api/v1/dashboard/stats?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+      api.searchLogs({ from, to, level: "ERROR", size: 500, page: 0 }).catch(() => ({ content: [] as LogEntry[], totalElements: 0 })),
     ]);
 
-    const distribution: PieSlice[] = agg.services.map((s) => ({ name: s.service, value: s.totalErrors, color: svcColor(s.service) }));
-    const topErrors: HorizontalBarPoint[] = agg.services.flatMap((s) => s.exceptions.map((e) => ({ name: e.exception || "Unknown", value: e.count }))).sort((a, b) => b.value - a.value).slice(0, 5);
+    const aggServices = agg?.services ?? [];
+    const distribution: PieSlice[] = aggServices.map((s) => ({ name: s.service, value: s.totalErrors, color: svcColor(s.service) }));
+    const topErrors: HorizontalBarPoint[] = aggServices
+      .flatMap((s) => (s.exceptions ?? []).map((e) => ({ name: e.exception || "Unknown", value: e.count })))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
 
     const serviceNames = Array.from(
-      new Set([...(statsDto.totalServices || []), ...agg.services.map((s) => s.service)])
+      new Set([...(statsDto.totalServices || []), ...aggServices.map((s) => s.service)])
     );
 
-    const makePoint = (timestamp: string): TimeSeriesPoint => {
-      const point: TimeSeriesPoint = { timestamp };
-      for (const service of serviceNames) {
-        point[service] = 0;
-      }
-      return point;
-    };
-
-    const byHour: Record<string, TimeSeriesPoint> = {};
     const heatmapByServiceHour: Record<string, Record<number, number>> = {};
-    for (const svc of agg.services) {
-      for (const ex of svc.exceptions) {
-        for (const t of ex.timeline) {
-          const key = t.timestamp.slice(11, 16);
-          const p = byHour[key] || makePoint(key);
-          const current = typeof p[svc.service] === "number" ? (p[svc.service] as number) : 0;
-          p[svc.service] = current + t.count;
-          byHour[key] = p;
-
+    for (const svc of aggServices) {
+      for (const ex of svc.exceptions ?? []) {
+        for (const t of ex.timeline ?? []) {
+          if (!t?.timestamp) continue;
           const hour = Number.parseInt(t.timestamp.slice(11, 13), 10);
           if (!Number.isNaN(hour) && hour >= 0 && hour < 24) {
             if (!heatmapByServiceHour[svc.service]) {
               heatmapByServiceHour[svc.service] = {};
             }
             const currentHourCount = heatmapByServiceHour[svc.service][hour] ?? 0;
-            heatmapByServiceHour[svc.service][hour] = currentHourCount + t.count;
+            heatmapByServiceHour[svc.service][hour] = currentHourCount + (t.count ?? 0);
           }
         }
       }
@@ -792,12 +788,21 @@ export const api = {
     ).catch(() => null);
     const resolutionDist = mapResolutionDist(resolutionResponse);
 
+    let errorTimeline = buildErrorTimelineFromAggregations(aggServices, serviceNames);
+    if (errorTimeline.length === 0) {
+      const errorLogs = errorLogsPage.content?.length ? errorLogsPage.content : logs;
+      errorTimeline = buildErrorTimelineFromLogs(errorLogs, serviceNames, window.fromMs, window.toMs);
+    }
+    if (errorTimeline.length === 0) {
+      errorTimeline = buildErrorTimelineFromIngestion(ingestionRate);
+    }
+
     return {
       stats,
       logs,
       issues,
       analysisSeedTraceId: logs.find((l) => !!l.traceId)?.traceId,
-      errorTimeline: Object.values(byHour).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp))),
+      errorTimeline,
       distribution,
       levelVolume,
       topErrors,

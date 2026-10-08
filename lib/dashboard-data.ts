@@ -1,3 +1,4 @@
+import { formatBucketLabel, hourBucketKey } from "@/lib/error-timeline";
 import { serviceColor } from "@/lib/service-colors";
 import type {
   BarPoint,
@@ -127,8 +128,6 @@ const withUpdatedSparklines = (
   };
 };
 
-const hourKeyUtc = (date: Date): string => date.toISOString().slice(11, 16);
-
 const hourUtc = (date: Date): number => date.getUTCHours();
 
 const bumpLevelVolume = (rows: BarPoint[], level: LogEntry["level"]): BarPoint[] => {
@@ -165,9 +164,11 @@ const bumpErrorTimeline = (
   timeline: TimeSeriesPoint[],
   service: string,
   services: string[],
-  key: string
+  bucketIso: string
 ): TimeSeriesPoint[] => {
-  const index = timeline.findIndex((point) => point.timestamp === key);
+  const index = timeline.findIndex(
+    (point) => point._sortKey === bucketIso || point.timestamp === bucketIso
+  );
   if (index >= 0) {
     const point = { ...timeline[index] };
     const current = typeof point[service] === "number" ? (point[service] as number) : 0;
@@ -177,14 +178,19 @@ const bumpErrorTimeline = (
     return updated;
   }
 
-  const point: TimeSeriesPoint = { timestamp: key };
+  const point: TimeSeriesPoint = {
+    timestamp: formatBucketLabel(bucketIso),
+    _sortKey: bucketIso,
+  };
   for (const svc of services) {
     point[svc] = svc === service ? 1 : 0;
   }
   if (!services.includes(service)) {
     point[service] = 1;
   }
-  return [...timeline, point].sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+  return [...timeline, point].sort((a, b) =>
+    String(a._sortKey ?? a.timestamp).localeCompare(String(b._sortKey ?? b.timestamp))
+  );
 };
 
 const bumpHeatmap = (cells: HeatmapCell[], service: string, hour: number): HeatmapCell[] => {
@@ -250,7 +256,7 @@ export function applyLiveLogToDashboard(data: DashboardData, log: LogEntry): Das
     errorCount: stats.errorCount + 1,
   };
 
-  const key = hourKeyUtc(log.timestamp);
+  const key = hourBucketKey(log.timestamp);
   const hour = hourUtc(log.timestamp);
   const errorLabel = log.stackTrace?.split("\n")[0]?.trim() || log.message.slice(0, 80);
 
