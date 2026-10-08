@@ -1,3 +1,5 @@
+import { timeRangeToHours } from "./time-range";
+
 export type CustomDateRangeInput = {
   from?: Date;
   to?: Date;
@@ -10,26 +12,6 @@ export type ResolvedDateWindow = {
   toMs: number;
 };
 
-const timeRangeToHours = (timeRange: string | number): number => {
-  if (typeof timeRange === "number") return timeRange;
-
-  switch (timeRange) {
-    case "1h":
-      return 1;
-    case "6h":
-      return 6;
-    case "24h":
-      return 24;
-    case "7d":
-      return 24 * 7;
-    case "30d":
-      return 24 * 30;
-    default:
-      return 24;
-  }
-};
-
-const isoHoursAgo = (hours: number): string => new Date(Date.now() - hours * 3600_000).toISOString();
 const nowIso = (): string => new Date().toISOString();
 
 /**
@@ -45,8 +27,6 @@ export function resolveDateWindow(
     }
     const from = new Date(customDateRange.from);
     const to = new Date(customDateRange.to);
-    from.setHours(0, 0, 0, 0);
-    to.setHours(23, 59, 59, 999);
     if (from.getTime() > to.getTime()) {
       return null;
     }
@@ -63,7 +43,7 @@ export function resolveDateWindow(
   const fromMs = toMs - hours * 3600_000;
   return {
     from: new Date(fromMs).toISOString(),
-    to: new Date(toMs).toISOString(),
+    to: nowIso(),
     fromMs,
     toMs,
   };

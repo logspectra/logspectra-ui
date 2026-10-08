@@ -50,7 +50,7 @@ function LayoutContentInner({ children }: { children: React.ReactNode }) {
     <LiveStreamProvider>
       <Sidebar />
       <Header />
-      <main className="ml-60 mt-16 p-6">
+      <main className="ml-60 mt-[4.25rem] p-6">
         {children}
       </main>
     </LiveStreamProvider>

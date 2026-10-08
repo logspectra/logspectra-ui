@@ -4,8 +4,9 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Project } from './types';
 import { authUtils } from './auth';
 import type { CustomDateRange } from './api';
+import type { TimeRange } from './time-range';
 
-export type TimeRange = '1h' | '6h' | '24h' | '7d' | '30d' | 'custom';
+export type { TimeRange } from './time-range';
 
 interface ProjectContextType {
   user: User | null;
@@ -20,6 +21,8 @@ interface ProjectContextType {
   createProject: (name: string, description?: string) => Promise<void>;
   setTimeRange: (timeRange: TimeRange) => Promise<void>;
   setCustomDateRange: (dateRange: CustomDateRange) => Promise<void>;
+  /** Sets global query window to an exact custom from/to (e.g. chart brush). */
+  applyCustomWindow: (from: Date, to: Date) => Promise<void>;
 }
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
@@ -121,6 +124,12 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setCustomDateRangeState(dateRange);
   };
 
+  const applyCustomWindow = async (from: Date, to: Date): Promise<void> => {
+    if (from.getTime() >= to.getTime()) return;
+    setCustomDateRangeState({ from, to });
+    setTimeRangeState("custom");
+  };
+
   return (
     <ProjectContext.Provider
       value={{
@@ -136,6 +145,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         createProject,
         setTimeRange,
         setCustomDateRange,
+        applyCustomWindow,
       }}
     >
       {children}

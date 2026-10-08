@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useProject } from "@/lib/project-context";
-import { api } from "@/lib/api";
+import { api, resolveDateWindow } from "@/lib/api";
 import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import type { LivePoint, LogEntry } from "@/lib/types";
 import { Card } from "@/components/ui/card";
@@ -29,36 +29,6 @@ const formatTimeTick = (timestamp: number | string) => {
     minute: "2-digit",
     second: "2-digit",
   });
-};
-
-const resolveLiveBootstrapWindow = (
-  timeRange: "1h" | "6h" | "24h" | "7d" | "30d" | "custom",
-  customDateRange: { from?: Date; to?: Date }
-): { from: string; to: string } => {
-  if (
-    timeRange === "custom" &&
-    customDateRange?.from instanceof Date &&
-    customDateRange?.to instanceof Date
-  ) {
-    const from = new Date(customDateRange.from);
-    const to = new Date(customDateRange.to);
-    from.setHours(0, 0, 0, 0);
-    to.setHours(23, 59, 59, 999);
-    return { from: from.toISOString(), to: to.toISOString() };
-  }
-
-  const hours =
-    timeRange === "1h" ? 1 :
-    timeRange === "6h" ? 6 :
-    timeRange === "24h" ? 24 :
-    timeRange === "7d" ? 24 * 7 :
-    timeRange === "30d" ? 24 * 30 :
-    24;
-
-  return {
-    from: new Date(Date.now() - hours * 3600_000).toISOString(),
-    to: new Date().toISOString(),
-  };
 };
 
 export default function LiveStream() {
@@ -142,10 +112,17 @@ export default function LiveStream() {
 
     const loadHistory = async () => {
       try {
-        const window = resolveLiveBootstrapWindow(timeRange, customDateRange);
+        const resolved = resolveDateWindow(timeRange, customDateRange);
+        if (!resolved) {
+          if (!cancelled) {
+            setLiveLogEntries([]);
+            setLiveData([]);
+          }
+          return;
+        }
         const searchResult = await api.searchLogs({
-          from: window.from,
-          to: window.to,
+          from: resolved.from,
+          to: resolved.to,
           page: 0,
           size: 200,
           projectId: selectedProject.id,

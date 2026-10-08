@@ -39,7 +39,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { AIAnalysisPanel } from "../../components/ai-analysis-panel";
-import { api } from "@/lib/api";
+import { api, resolveDateWindow } from "@/lib/api";
 import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import type { AnalysisStreamEvent } from "@/lib/api";
@@ -75,29 +75,8 @@ export default function LogExplorer() {
   };
 
   const getDateWindowForSearch = (): { from: string; to: string } | null => {
-    if (timeRange === "custom") {
-      if (!(customDateRange.from instanceof Date) || !(customDateRange.to instanceof Date)) return null;
-      const from = new Date(customDateRange.from);
-      const to = new Date(customDateRange.to);
-      from.setHours(0, 0, 0, 0);
-      to.setHours(23, 59, 59, 999);
-      return { from: from.toISOString(), to: to.toISOString() };
-    }
-
-    const hours =
-      timeRange === "1h"
-        ? 1
-        : timeRange === "6h"
-          ? 6
-          : timeRange === "24h"
-            ? 24
-            : timeRange === "7d"
-              ? 24 * 7
-              : 24 * 30;
-    return {
-      from: new Date(Date.now() - hours * 3600_000).toISOString(),
-      to: new Date().toISOString(),
-    };
+    const window = resolveDateWindow(timeRange, customDateRange);
+    return window ? { from: window.from, to: window.to } : null;
   };
 
   useEffect(() => {

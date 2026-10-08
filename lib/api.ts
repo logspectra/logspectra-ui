@@ -22,9 +22,11 @@ import type {
 } from "./types";
 import { createEmptyDashboardData } from "@/lib/dashboard-data";
 import { resolveDateWindow } from "@/lib/date-window";
+import { normalizeIssueWindow } from "@/lib/time-range";
 
 export { resolveDateWindow, isWithinDateWindow } from "@/lib/date-window";
 export type { ResolvedDateWindow, CustomDateRangeInput } from "@/lib/date-window";
+export type { TimeRange } from "@/lib/time-range";
 
 declare global {
   interface Window {
@@ -67,35 +69,6 @@ const getDateWindow = (timeRange: string | number, customDateRange?: CustomDateR
     throw new Error("Custom time range requires both start and end dates");
   }
   return { from: window.from, to: window.to };
-};
-
-const durationHoursForCustomRange = (customDateRange?: CustomDateRange): number | null => {
-  if (!(customDateRange?.from instanceof Date) || !(customDateRange?.to instanceof Date)) return null;
-
-  const from = new Date(customDateRange.from);
-  const to = new Date(customDateRange.to);
-  from.setHours(0, 0, 0, 0);
-  to.setHours(23, 59, 59, 999);
-
-  const diffMs = Math.max(0, to.getTime() - from.getTime());
-  return Math.max(1, Math.ceil(diffMs / 3600_000));
-};
-
-const normalizeIssueWindow = (timeRange: string, customDateRange?: CustomDateRange): string | null => {
-  if (timeRange === "custom") {
-    const customHours = durationHoursForCustomRange(customDateRange);
-    if (customHours === null) return null;
-    if (customHours <= 1) return "1h";
-    if (customHours <= 6) return "6h";
-    if (customHours <= 24) return "24h";
-    if (customHours <= 24 * 7) return "7d";
-    return "30d";
-  }
-
-  if (timeRange === "1h" || timeRange === "6h" || timeRange === "24h" || timeRange === "7d" || timeRange === "30d") {
-    return timeRange;
-  }
-  return "24h";
 };
 
 const handleUnauthorized = (): void => {

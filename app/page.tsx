@@ -13,6 +13,7 @@ import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import { useSmoothNumber } from "@/hooks/use-smooth-number";
 import { DashboardMiniSparkline } from "@/components/dashboard-mini-sparkline";
+import { DashboardErrorRateChart } from "@/components/dashboard-error-rate-chart";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,8 +26,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  AreaChart,
-  Area,
   BarChart,
   Bar,
   PieChart,
@@ -38,15 +37,13 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
-  ReferenceLine,
 } from "recharts";
 import { api } from "@/lib/api";
 import { TrendingUp, TrendingDown, Brain } from "lucide-react";
 
 export default function Dashboard() {
-  const { selectedProject, timeRange, customDateRange } = useProject();
+  const { selectedProject, timeRange, customDateRange, applyCustomWindow } = useProject();
   const { sseEnabled } = useLiveStreamPreference();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
 
@@ -338,39 +335,14 @@ export default function Dashboard() {
         {/* Error Rate Over Time */}
         <Card className="col-span-5 bg-card border-border p-4">
           <h3 className="text-sm font-semibold text-foreground mb-4">Error Rate Over Time</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={errorTimelineData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis
-                dataKey="timestamp"
-                tick={{ fill: "#6b7280", fontSize: 12 }}
-                axisLine={false}
-              />
-              <YAxis
-                tick={{ fill: "#6b7280", fontSize: 12 }}
-                axisLine={false}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <ReferenceLine
-                y={300}
-                stroke="#dc2626"
-                strokeDasharray="5 5"
-                label="Alert Threshold"
-              />
-              {timelineServiceKeys.map((service, index) => (
-                <Area
-                  key={service}
-                  type="monotone"
-                  dataKey={service}
-                  stackId="1"
-                  stroke={getServiceColor(service, index)}
-                  fill={getServiceColor(service, index)}
-                  fillOpacity={0.6}
-                />
-              ))}
-            </AreaChart>
-          </ResponsiveContainer>
+          <DashboardErrorRateChart
+            data={errorTimelineData}
+            dateWindow={dateWindow}
+            serviceKeys={timelineServiceKeys}
+            getServiceColor={getServiceColor}
+            onBrushRange={(from, to) => void applyCustomWindow(from, to)}
+            customTooltip={CustomTooltip}
+          />
         </Card>
 
         {/* Error Distribution by Service */}
