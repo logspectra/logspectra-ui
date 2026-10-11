@@ -61,10 +61,15 @@ export interface AnalysisResult {
     effort: "QUICK" | "MEDIUM" | "COMPLEX";
     description: string;
     code: string;
+    filePath?: string;
+    newContent?: string;
   }[];
   relatedTraceIds: string[];
   analyzedAt: Date;
   cached: boolean;
+  remediationPrUrl?: string;
+  remediationBranch?: string;
+  remediationPrNumber?: number;
 }
 
 // Dashboard Stats

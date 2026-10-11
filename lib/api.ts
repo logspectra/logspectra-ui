@@ -65,9 +65,16 @@ export interface CustomDateRange {
 }
 
 export interface AnalysisStreamEvent {
-  type: "progress" | "result" | "complete";
+  type: "progress" | "result" | "complete" | "token" | "error";
   message: string;
   timestamp?: string;
+}
+
+export type AnalyzeProvider = "OPENAI" | "OLLAMA" | "CLAUDE" | "GEMINI";
+
+export interface StreamAnalyzeOptions extends StreamAnalysisHandlers {
+  provider?: AnalyzeProvider;
+  createRemediationPr?: boolean;
 }
 
 const getDateWindow = (timeRange: string | number, customDateRange?: CustomDateRange): { from: string; to: string } => {
@@ -129,15 +136,23 @@ const mapAnalysisResult = (r: AnalysisDto, fallbackTraceId?: string): AnalysisRe
   errorSummary: r.errorSummary,
   rootCause: r.rootCause,
   affectedServices: r.affectedServices || [],
-  suggestedFixes: (r.suggestedFixes || []).map((f) => ({
-    priority: f.priority,
-    effort: f.effort,
-    description: f.description || f.fix || "No description",
-    code: f.fix || f.description || "",
-  })),
+  suggestedFixes: (r.suggestedFixes || []).map((f) => {
+    const snippet = f.newContent || f.fix || f.description || "";
+    return {
+      priority: f.priority,
+      effort: f.effort,
+      description: f.fix || f.description || "Suggested change",
+      code: snippet,
+      filePath: f.filePath,
+      newContent: f.newContent,
+    };
+  }),
   relatedTraceIds: r.relatedTraceIds || (fallbackTraceId ? [fallbackTraceId] : []),
   analyzedAt: new Date(r.analyzedAt),
   cached: r.cached ?? r.cachedResult ?? false,
+  remediationPrUrl: r.remediationPrUrl,
+  remediationBranch: r.remediationBranch,
+  remediationPrNumber: r.remediationPrNumber,
 });
 
 const normalizeStreamEvent = (eventName: string, payload: Record<string, unknown>): AnalysisStreamEvent | null => {
@@ -157,22 +172,44 @@ const normalizeStreamEvent = (eventName: string, payload: Record<string, unknown
     };
   }
 
+  if (eventName === "error") {
+    return {
+      type: "error",
+      message: typeof payload.message === "string" ? payload.message : "Analysis failed",
+      timestamp: typeof payload.timestamp === "string" ? payload.timestamp : undefined,
+    };
+  }
+
+  if (eventName === "token") {
+    const text = typeof payload.text === "string" ? payload.text : "";
+    return {
+      type: "token",
+      message: text,
+      timestamp: typeof payload.timestamp === "string" ? payload.timestamp : undefined,
+    };
+  }
+
   return null;
 };
 
 async function streamAnalyzeLog(
   traceId: string,
-  provider: "OPENAI" | "OLLAMA" | "CLAUDE",
-  handlers: StreamAnalysisHandlers = {}
+  options: StreamAnalyzeOptions = {}
 ): Promise<AnalysisResult | null> {
+  const provider = options.provider ?? "OPENAI";
   const headers = createApiHeaders();
   headers.set("Accept", "text/event-stream");
+
+  const body: Record<string, unknown> = { traceId, provider };
+  if (options.createRemediationPr) {
+    body.createRemediationPr = true;
+  }
 
   const response = await fetch(`${getApiBaseUrl()}/api/v1/logs/analyze`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ traceId, provider }),
-    signal: handlers.signal,
+    body: JSON.stringify(body),
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -221,15 +258,19 @@ async function streamAnalyzeLog(
       if (eventName === "result") {
         const rawResult = (payload.result ?? payload) as AnalysisDto;
         finalResult = mapAnalysisResult(rawResult, traceId);
-        handlers.onResult?.(finalResult);
+        options.onResult?.(finalResult);
         return;
       }
 
       const normalized = normalizeStreamEvent(eventName, payload);
       if (normalized?.type === "progress") {
-        handlers.onProgress?.(normalized);
+        options.onProgress?.(normalized);
       } else if (normalized?.type === "complete") {
-        handlers.onComplete?.(normalized);
+        options.onComplete?.(normalized);
+      } else if (normalized?.type === "token") {
+        options.onProgress?.(normalized);
+      } else if (normalized?.type === "error") {
+        options.onProgress?.(normalized);
       }
     } catch {
       // ignore malformed SSE frames
@@ -386,11 +427,40 @@ interface SeverityRuleUpsertDto {
 }
 interface LoginResponseDto { token: string; user: { id: string; username: string; role: string; active: boolean; createdAt: string } }
 interface ProjectDto { id: string; name: string; description?: string; createdAt: string; serviceCount?: number }
-interface AnalysisDto { severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; confidence: number; service?: string; errorSummary: string; rootCause: string; affectedServices: string[]; suggestedFixes: Array<{ fix?: string; description?: string; priority: "HIGH" | "MEDIUM" | "LOW"; effort: "QUICK" | "MEDIUM" | "COMPLEX" }>; relatedTraceIds: string[]; analyzedAt: string; cachedResult?: boolean; cached?: boolean }
-interface ProviderModelsResponseDto { provider?: "OPENAI" | "OLLAMA" | "CLAUDE"; models?: string[] }
+interface AnalysisDto {
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  confidence: number;
+  service?: string;
+  errorSummary: string;
+  rootCause: string;
+  affectedServices: string[];
+  suggestedFixes: Array<{
+    fix?: string;
+    description?: string;
+    priority: "HIGH" | "MEDIUM" | "LOW";
+    effort: "QUICK" | "MEDIUM" | "COMPLEX";
+    filePath?: string;
+    newContent?: string;
+  }>;
+  relatedTraceIds: string[];
+  analyzedAt: string;
+  cachedResult?: boolean;
+  cached?: boolean;
+  remediationPrUrl?: string;
+  remediationBranch?: string;
+  remediationPrNumber?: number;
+}
+interface ProviderModelsResponseDto { provider?: AnalyzeProvider; models?: string[] }
 
 export interface ManagedUser { id: string; username: string; role: string; active: boolean; createdAt: string }
-export interface AiSettings { id?: string; provider: "OPENAI" | "OLLAMA" | "CLAUDE"; apiKey?: string; modelName: string; baseUrl?: string; active?: boolean }
+export interface AiSettings {
+  id?: string;
+  provider: AnalyzeProvider;
+  apiKey?: string;
+  modelName: string;
+  baseUrl?: string;
+  active?: boolean;
+}
 export interface LogSearchParams {
   from: string;
   to: string;
@@ -682,16 +752,13 @@ export const api = {
     await apiRequest<void>(`/api/v1/severity-rules/${id}`, { method: "DELETE" });
   },
 
-  analyzeLog: async (traceId: string, provider: "OPENAI" | "OLLAMA" | "CLAUDE"): Promise<AnalysisResult> => {
+  analyzeLog: async (traceId: string, provider: AnalyzeProvider): Promise<AnalysisResult> => {
     const r = await apiRequest<AnalysisDto>("/api/v1/logs/analyze", { method: "POST", body: JSON.stringify({ traceId, provider }) });
     return mapAnalysisResult(r, traceId);
   },
 
-  streamAnalyzeLog: async (
-    traceId: string,
-    provider: "OPENAI" | "OLLAMA" | "CLAUDE",
-    handlers: StreamAnalysisHandlers = {}
-  ): Promise<AnalysisResult | null> => streamAnalyzeLog(traceId, provider, handlers),
+  streamAnalyzeLog: async (traceId: string, options: StreamAnalyzeOptions = {}): Promise<AnalysisResult | null> =>
+    streamAnalyzeLog(traceId, options),
 
   getDashboardData: async (timeRange = "24h", customDateRange?: CustomDateRange) => {
     const window = resolveDateWindow(timeRange, customDateRange);

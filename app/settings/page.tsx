@@ -29,6 +29,9 @@ export default function Settings() {
   const [modelFetchError, setModelFetchError] = useState("");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [apiKeyInput, setApiKeyInput] = useState("");
+
+  const cloudProvider = selectedProvider === "OPENAI" || selectedProvider === "CLAUDE" || selectedProvider === "GEMINI";
 
   useEffect(() => {
     const load = async () => {
@@ -100,8 +103,13 @@ export default function Settings() {
 
   const handleProviderChange = (provider: AiSettings["provider"]) => {
     setSelectedProvider(provider);
+    setApiKeyInput("");
     if (provider === "OLLAMA") {
       setAi({ ...ai, provider, baseUrl: `http://localhost:${OLLAMA_DEFAULT_PORT}` });
+      return;
+    }
+    if (provider === "GEMINI") {
+      setAi({ ...ai, provider, baseUrl: "https://generativelanguage.googleapis.com" });
       return;
     }
 
@@ -115,21 +123,24 @@ export default function Settings() {
         return;
       }
 
+      const trimmedKey = apiKeyInput.trim();
       const payload: AiSettings =
         selectedProvider === "OLLAMA"
           ? {
               ...ai,
               provider: selectedProvider,
               active: true,
-              apiKey: undefined,
               baseUrl: `http://localhost:${OLLAMA_DEFAULT_PORT}`,
             }
           : {
               ...ai,
               provider: selectedProvider,
               active: true,
-              apiKey: undefined,
-              baseUrl: undefined,
+              apiKey: trimmedKey || undefined,
+              baseUrl:
+                selectedProvider === "GEMINI"
+                  ? ai.baseUrl || "https://generativelanguage.googleapis.com"
+                  : undefined,
             };
 
       await api.upsertAiSettings(payload);
@@ -166,8 +177,31 @@ export default function Settings() {
         <div className="space-y-3">
           <Select value={selectedProvider} onValueChange={(provider) => handleProviderChange(provider as AiSettings["provider"])}>
             <SelectTrigger className="bg-input border-border text-foreground"><SelectValue placeholder="Select provider" /></SelectTrigger>
-            <SelectContent className="bg-popover border-border"><SelectItem value="OPENAI">OPENAI</SelectItem><SelectItem value="OLLAMA">OLLAMA</SelectItem><SelectItem value="CLAUDE">CLAUDE</SelectItem></SelectContent>
+            <SelectContent className="bg-popover border-border">
+              <SelectItem value="OPENAI">OpenAI</SelectItem>
+              <SelectItem value="GEMINI">Google Gemini</SelectItem>
+              <SelectItem value="CLAUDE">Anthropic Claude</SelectItem>
+              <SelectItem value="OLLAMA">Ollama (local)</SelectItem>
+            </SelectContent>
           </Select>
+          {cloudProvider && (
+            <div>
+              <Label className="text-sm text-muted-foreground mb-2 block">API key</Label>
+              <Input
+                type="password"
+                autoComplete="off"
+                placeholder={ai.apiKey ? `Saved (${ai.apiKey}) — enter to replace` : "Paste provider API key"}
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                className="bg-input border-border text-foreground"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {selectedProvider === "GEMINI"
+                  ? "Uses Google AI (Generative Language API). Header: X-goog-api-key."
+                  : "Stored in LogSpectra backend for this provider."}
+              </p>
+            </div>
+          )}
           <Select value={ai.modelName} onValueChange={(modelName) => setAi({ ...ai, modelName })}>
             <SelectTrigger className="bg-input border-border text-foreground" disabled={!selectedProvider || isLoadingModels || modelOptions.length === 0}>
               <SelectValue placeholder={isLoadingModels ? "Loading models..." : "Select model"} />

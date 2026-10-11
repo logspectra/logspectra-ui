@@ -1,10 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Check, CheckCircle2, Copy, Loader2, Sparkles } from "lucide-react";
+import {
+  Bug,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  ExternalLink,
+  FileCode2,
+  GitBranch,
+  Loader2,
+} from "lucide-react";
 import type { AnalysisStreamEvent } from "@/lib/api";
 import type { AnalysisResult } from "@/lib/types";
 
@@ -27,6 +38,8 @@ interface AIAnalysisPanelProps {
   isStreaming?: boolean;
   error?: string;
   traceId?: string;
+  providerLabel?: string;
+  createRemediationPr?: boolean;
   onClose?: () => void;
 }
 
@@ -37,16 +50,46 @@ const formatTimestamp = (timestamp?: string): string | null => {
   return date.toLocaleTimeString();
 };
 
+const humanizeProgress = (message: string): string => {
+  const trimmed = message.trim();
+  if (!trimmed) return "Working…";
+  if (trimmed.toLowerCase().startsWith("starting log analysis")) {
+    return "Collecting trace logs and starting the debug agent";
+  }
+  return trimmed;
+};
+
 export function AIAnalysisPanel({
   result = null,
   events = [],
   isStreaming = false,
   error = "",
   traceId,
+  providerLabel,
+  createRemediationPr = false,
   onClose,
 }: AIAnalysisPanelProps) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const lastProgressIndex = [...events].map((event) => event.type).lastIndexOf("progress");
+  const [showLiveOutput, setShowLiveOutput] = useState(true);
+  const liveOutputRef = useRef<HTMLPreElement>(null);
+
+  const timelineEvents = useMemo(
+    () => events.filter((e) => e.type === "progress" || e.type === "complete" || e.type === "error"),
+    [events]
+  );
+
+  const liveTokens = useMemo(() => events.filter((e) => e.type === "token").map((e) => e.message).join(""), [events]);
+
+  const streamError = useMemo(() => {
+    const fromEvent = [...events].reverse().find((e) => e.type === "error");
+    return error || fromEvent?.message || "";
+  }, [events, error]);
+
+  useEffect(() => {
+    if (liveOutputRef.current && isStreaming) {
+      liveOutputRef.current.scrollTop = liveOutputRef.current.scrollHeight;
+    }
+  }, [liveTokens, isStreaming]);
 
   const handleCopyCode = (code: string, index: number) => {
     navigator.clipboard.writeText(code);
@@ -54,38 +97,62 @@ export function AIAnalysisPanel({
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  if (!result && !isStreaming && events.length === 0 && !error) return null;
+  if (!result && !isStreaming && events.length === 0 && !streamError) return null;
 
-  const latestStatus = error
-    ? "error"
+  const phase = streamError
+    ? "failed"
     : isStreaming
-      ? "streaming"
+      ? "running"
       : result
-        ? "complete"
+        ? "done"
         : "idle";
+
+  const steps = [
+    { id: "logs", label: "Trace logs", done: timelineEvents.length > 0 || !!result },
+    {
+      id: "agent",
+      label: createRemediationPr ? "Codebase + GitHub agent" : "AI debug agent",
+      done: liveTokens.length > 0 || !!result,
+      active: isStreaming && timelineEvents.length > 0 && !result,
+    },
+    {
+      id: "fix",
+      label: createRemediationPr ? "Remediation PR" : "Diagnosis",
+      done: !!result,
+      active: isStreaming && liveTokens.length > 0 && !result,
+    },
+  ];
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-border bg-gradient-to-br from-card via-card to-muted/20 p-4 text-card-foreground shadow-sm">
-        <div className="flex items-start justify-between gap-4">
+      <div className="overflow-hidden rounded-xl border border-border bg-gradient-to-br from-slate-50 via-card to-blue-50/40 p-4 shadow-sm dark:from-slate-950 dark:via-card dark:to-blue-950/20">
+        <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-blue-500" />
-              <h4 className="text-sm font-semibold text-foreground">AI Analysis Stream</h4>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
+                <Bug className="h-4 w-4" />
+              </div>
+              <h4 className="text-sm font-semibold text-foreground">Debug session</h4>
               <Badge
                 className={
-                  latestStatus === "error"
+                  phase === "failed"
                     ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-100"
-                    : latestStatus === "streaming"
+                    : phase === "running"
                       ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-100"
                       : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-100"
                 }
               >
-                {latestStatus === "streaming" ? "Streaming" : latestStatus === "complete" ? "Complete" : latestStatus === "error" ? "Error" : "Idle"}
+                {phase === "running" ? "In progress" : phase === "done" ? "Complete" : phase === "failed" ? "Failed" : "Ready"}
               </Badge>
+              {providerLabel && (
+                <Badge variant="outline" className="font-normal text-muted-foreground">
+                  {providerLabel}
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
-              {traceId ? `Trace ID: ${traceId}` : "Streaming analysis updates from the backend"}
+              {traceId ? `Trace ${traceId}` : "Streaming from LogSpectra backend"}
+              {createRemediationPr ? " · GitHub remediation enabled" : ""}
             </p>
           </div>
           {onClose && (
@@ -95,111 +162,159 @@ export function AIAnalysisPanel({
           )}
         </div>
 
-        <div className="mt-4 space-y-2">
-          {events.length > 0 ? (
-            events.map((event, index) => {
-              const isComplete = event.type === "complete";
-              const isResult = event.type === "result";
-              const isActiveProgress = event.type === "progress" && index === lastProgressIndex && isStreaming;
-              return (
-                <div
-                  key={`${event.type}-${index}-${event.timestamp ?? event.message}`}
-                  className="flex items-start gap-3 rounded-lg border border-border bg-background/70 px-3 py-2"
+        <ol className="mt-4 flex flex-col gap-2 sm:flex-row sm:gap-0">
+          {steps.map((step, index) => (
+            <li key={step.id} className="flex flex-1 items-center gap-2 sm:flex-col sm:items-start sm:px-2">
+              <div className="flex w-full items-center gap-2">
+                <span
+                  className={
+                    step.done
+                      ? "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white"
+                      : step.active
+                        ? "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-blue-500 bg-background"
+                        : "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-muted"
+                  }
                 >
-                  <div
-                    className={
-                      isComplete
-                        ? "mt-1 h-2.5 w-2.5 rounded-full bg-emerald-500"
-                        : isResult
-                          ? "mt-1 h-2.5 w-2.5 rounded-full bg-blue-500"
-                          : isActiveProgress
-                            ? "mt-1 h-2.5 w-2.5 rounded-full bg-sky-500 animate-pulse"
-                            : "mt-1 h-2.5 w-2.5 rounded-full bg-sky-300"
-                    }
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge
-                        variant="secondary"
-                        className={
-                          isComplete
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-100"
-                            : isResult
-                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-100"
-                              : "bg-sky-100 text-sky-800 dark:bg-sky-900/20 dark:text-sky-100"
-                        }
-                      >
-                        {event.type}
-                      </Badge>
-                      {event.timestamp && (
-                        <span className="text-xs text-muted-foreground">{formatTimestamp(event.timestamp)}</span>
-                      )}
-                    </div>
-                    <p className="mt-1 text-sm text-foreground">{event.message}</p>
-                  </div>
-                  {isComplete ? (
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-500" />
-                  ) : isResult ? (
-                    <Check className="mt-0.5 h-4 w-4 text-blue-500" />
-                  ) : isActiveProgress ? (
-                    <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-sky-500" />
+                  {step.done ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : step.active ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
                   ) : (
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-sky-500" />
+                    <span className="text-[10px] font-medium text-muted-foreground">{index + 1}</span>
+                  )}
+                </span>
+                <span className="text-xs font-medium text-foreground sm:hidden">{step.label}</span>
+                {index < steps.length - 1 && <div className="hidden h-px flex-1 bg-border sm:block" />}
+              </div>
+              <span className="hidden pl-8 text-xs text-muted-foreground sm:block">{step.label}</span>
+            </li>
+          ))}
+        </ol>
+
+        {timelineEvents.length > 0 && (
+          <div className="mt-4 space-y-1.5">
+            {timelineEvents.slice(-4).map((event, index) => (
+              <div
+                key={`${event.type}-${index}-${event.timestamp ?? event.message}`}
+                className="flex items-start gap-2 rounded-lg border border-border/60 bg-background/80 px-3 py-2 text-sm"
+              >
+                {event.type === "error" ? (
+                  <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-500" />
+                ) : event.type === "complete" ? (
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                ) : (
+                  <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-blue-500" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-foreground">{humanizeProgress(event.message)}</p>
+                  {event.timestamp && (
+                    <p className="text-[11px] text-muted-foreground">{formatTimestamp(event.timestamp)}</p>
                   )}
                 </div>
-              );
-            })
-          ) : isStreaming ? (
-            <div className="flex items-center gap-3 rounded-lg border border-border bg-background/70 px-3 py-3">
-              <Loader2 className="h-4 w-4 animate-spin text-sky-500" />
-              <span className="text-sm text-foreground">Waiting for analysis progress...</span>
-            </div>
-          ) : null}
+              </div>
+            ))}
+          </div>
+        )}
 
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
-              {error}
-            </div>
-          )}
-        </div>
+        {isStreaming && timelineEvents.length === 0 && (
+          <div className="mt-4 flex items-center gap-3 rounded-lg border border-dashed border-blue-200 bg-blue-50/50 px-3 py-3 dark:border-blue-900/50 dark:bg-blue-950/20">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+            <span className="text-sm text-foreground">Connecting to the debug pipeline…</span>
+          </div>
+        )}
+
+        {(liveTokens.length > 0 || (isStreaming && phase === "running")) && (
+          <div className="mt-4">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between rounded-t-lg border border-border bg-muted/50 px-3 py-2 text-left text-xs font-medium text-foreground"
+              onClick={() => setShowLiveOutput((v) => !v)}
+            >
+              <span>Agent output {isStreaming ? "(live)" : ""}</span>
+              {showLiveOutput ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            {showLiveOutput && (
+              <pre
+                ref={liveOutputRef}
+                className="max-h-40 overflow-auto rounded-b-lg border border-t-0 border-border bg-slate-950 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-100"
+              >
+                {liveTokens || (isStreaming ? "…" : "")}
+              </pre>
+            )}
+          </div>
+        )}
+
+        {streamError && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+            {streamError}
+          </div>
+        )}
       </div>
+
+      {result?.remediationPrUrl && (
+        <Card className="border-emerald-200 bg-emerald-50/80 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <GitBranch className="mt-0.5 h-5 w-5 text-emerald-600" />
+              <div>
+                <p className="text-sm font-semibold text-foreground">Remediation pull request opened</p>
+                <p className="text-xs text-muted-foreground">
+                  {result.remediationBranch ? `Branch ${result.remediationBranch}` : "GitHub"}
+                  {result.remediationPrNumber != null ? ` · PR #${result.remediationPrNumber}` : ""}
+                </p>
+              </div>
+            </div>
+            <Button asChild size="sm" className="shrink-0 bg-emerald-600 hover:bg-emerald-700">
+              <a href={result.remediationPrUrl} target="_blank" rel="noopener noreferrer">
+                View on GitHub
+                <ExternalLink className="ml-2 h-3.5 w-3.5" />
+              </a>
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {result && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between rounded-lg border border-border bg-card p-4 text-card-foreground">
-            <div className="flex items-center gap-3">
-              <Badge className={severityBadgeClasses[result.severity] ?? severityBadgeClasses.LOW}>
-                {result.severity}
-              </Badge>
-              <div>
-                <p className="text-sm text-muted-foreground">Confidence</p>
-                <p className="font-semibold text-foreground">{result.confidence}%</p>
-              </div>
-              <div className="h-8 w-px bg-border" />
-              <div>
-                <p className="text-sm text-muted-foreground">Service</p>
-                <p className="font-semibold text-foreground">{result.service}</p>
-              </div>
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-4">
+            <Badge className={severityBadgeClasses[result.severity] ?? severityBadgeClasses.LOW}>{result.severity}</Badge>
+            <div>
+              <p className="text-xs text-muted-foreground">Confidence</p>
+              <p className="text-sm font-semibold text-foreground">{Math.round(result.confidence)}%</p>
             </div>
+            <div className="h-8 w-px bg-border" />
+            <div>
+              <p className="text-xs text-muted-foreground">Service</p>
+              <p className="text-sm font-semibold text-foreground">{result.service}</p>
+            </div>
+            {result.cached && (
+              <Badge variant="secondary" className="ml-auto">Cached result</Badge>
+            )}
           </div>
 
           <Card className="p-4">
-            <h4 className="mb-2 text-sm font-semibold text-foreground">Error Summary</h4>
-            <p className="text-sm text-muted-foreground">{result.errorSummary}</p>
+            <h4 className="mb-2 text-sm font-semibold text-foreground">What happened</h4>
+            <p className="text-sm leading-relaxed text-muted-foreground">{result.errorSummary}</p>
           </Card>
 
           <Card className="p-4">
-            <h4 className="mb-2 text-sm font-semibold text-foreground">Root Cause</h4>
-            <p className="text-sm text-muted-foreground">{result.rootCause}</p>
+            <h4 className="mb-2 text-sm font-semibold text-foreground">Root cause</h4>
+            <p className="text-sm leading-relaxed text-muted-foreground">{result.rootCause}</p>
           </Card>
 
           <div className="space-y-2">
-            <h4 className="text-sm font-semibold text-foreground">Suggested Fixes</h4>
+            <h4 className="text-sm font-semibold text-foreground">Suggested fixes</h4>
             {result.suggestedFixes.length > 0 ? (
               result.suggestedFixes.map((fix, index) => (
-                <Card key={index} className="p-4">
-                  <div className="mb-2 flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2">
+                <Card key={`${fix.filePath ?? "fix"}-${index}`} className="overflow-hidden p-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-4 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {fix.filePath && (
+                        <span className="inline-flex items-center gap-1 font-mono text-xs text-foreground">
+                          <FileCode2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          {fix.filePath}
+                        </span>
+                      )}
                       <Badge variant="secondary" className={priorityBadgeClasses[fix.priority] ?? priorityBadgeClasses.LOW}>
                         {fix.priority}
                       </Badge>
@@ -207,7 +322,7 @@ export function AIAnalysisPanel({
                         {fix.effort}
                       </Badge>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => handleCopyCode(fix.code, index)}>
+                    <Button variant="ghost" size="sm" onClick={() => handleCopyCode(fix.newContent || fix.code, index)}>
                       {copiedIndex === index ? (
                         <Check className="h-4 w-4 text-green-500" />
                       ) : (
@@ -215,24 +330,26 @@ export function AIAnalysisPanel({
                       )}
                     </Button>
                   </div>
-                  <p className="mb-3 text-sm text-muted-foreground">{fix.description}</p>
-                  <code className="block overflow-x-auto rounded border border-border bg-muted p-2 text-xs text-foreground">
-                    {fix.code}
-                  </code>
+                  <div className="space-y-2 p-4">
+                    <p className="text-sm text-muted-foreground">{fix.description}</p>
+                    {(fix.newContent || fix.code) && (
+                      <pre className="max-h-64 overflow-auto rounded-md border border-border bg-slate-950 p-3 font-mono text-[11px] leading-relaxed text-slate-100">
+                        {fix.newContent || fix.code}
+                      </pre>
+                    )}
+                  </div>
                 </Card>
               ))
             ) : (
               <Card className="p-4">
-                <p className="text-sm text-muted-foreground">No automated fixes were returned.</p>
+                <p className="text-sm text-muted-foreground">No code changes were proposed. Review the root cause above.</p>
               </Card>
             )}
           </div>
 
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              {result.cached ? "Cached" : "Fresh"} • Analyzed at {result.analyzedAt.toLocaleTimeString()}
-            </span>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            Analyzed at {result.analyzedAt.toLocaleString()}
+          </p>
         </div>
       )}
     </div>

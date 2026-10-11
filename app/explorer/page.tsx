@@ -39,12 +39,14 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { AIAnalysisPanel } from "../../components/ai-analysis-panel";
-import { api, resolveDateWindow } from "@/lib/api";
+import { api, type AnalyzeProvider, resolveDateWindow } from "@/lib/api";
 import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import type { AnalysisStreamEvent } from "@/lib/api";
 import type { AnalysisResult, LogEntry } from "@/lib/types";
-import { Eye, Brain, Copy, Check, CheckCircle2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Eye, Bug, Copy, Check, CheckCircle2 } from "lucide-react";
 
 export default function LogExplorer() {
   const { selectedProject, timeRange, customDateRange } = useProject();
@@ -61,6 +63,8 @@ export default function LogExplorer() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [analysisEvents, setAnalysisEvents] = useState<AnalysisStreamEvent[]>([]);
   const [analysisError, setAnalysisError] = useState("");
+  const [createRemediationPr, setCreateRemediationPr] = useState(false);
+  const [analyzeProvider, setAnalyzeProvider] = useState<AnalyzeProvider>("OPENAI");
   const [copiedTraceId, setCopiedTraceId] = useState(false);
   const [showChart, setShowChart] = useState(false);
   const [selectedLogIds, setSelectedLogIds] = useState<Set<string>>(new Set());
@@ -172,6 +176,22 @@ export default function LogExplorer() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    api.getAiSettings()
+      .then((settings) => {
+        if (!cancelled && settings.provider) {
+          setAnalyzeProvider(settings.provider);
+        }
+      })
+      .catch(() => {
+        // keep default provider
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const chartData = useMemo(() => {
     const window = getDateWindowForSearch();
     if (!window) return [] as Array<{ label: string; total: number; errors: number; ts: number }>;
@@ -272,6 +292,23 @@ export default function LogExplorer() {
           return [...prev, event];
         }
 
+        if (event.type === "token") {
+          const last = prev[prev.length - 1];
+          if (last?.type === "token") {
+            const nextEvents = [...prev];
+            nextEvents[nextEvents.length - 1] = {
+              ...last,
+              message: last.message + event.message,
+            };
+            return nextEvents;
+          }
+          return [...prev, event];
+        }
+
+        if (event.type === "error") {
+          setAnalysisError(event.message);
+        }
+
         const lastEvent = prev[prev.length - 1];
         if (lastEvent?.type === event.type && lastEvent.message === event.message) {
           return prev;
@@ -281,7 +318,9 @@ export default function LogExplorer() {
     };
 
     try {
-      const analysis = await api.streamAnalyzeLog(traceId, "OPENAI", {
+      const analysis = await api.streamAnalyzeLog(traceId, {
+        provider: analyzeProvider,
+        createRemediationPr,
         signal: controller.signal,
         onProgress: (event) => {
           if (controller.signal.aborted) return;
@@ -292,7 +331,7 @@ export default function LogExplorer() {
           setAnalysisResult(result);
           appendAnalysisEvent({
             type: "result",
-            message: "Analysis result received",
+            message: "Debug diagnosis ready",
             timestamp: new Date().toISOString(),
           });
           setIsAnalyzing(false);
@@ -311,7 +350,7 @@ export default function LogExplorer() {
     } catch (error) {
       if (!controller.signal.aborted) {
         console.error("❌ Failed to analyze log:", error);
-        setAnalysisError(error instanceof Error ? error.message : "Failed to analyze log");
+        setAnalysisError(error instanceof Error ? error.message : "Debug session failed");
       }
     } finally {
       if (!controller.signal.aborted) {
@@ -589,7 +628,7 @@ export default function LogExplorer() {
           <SheetHeader className="px-6 pt-6 pb-4 border-b border-border">
             <SheetTitle className="text-foreground">Log Details</SheetTitle>
             <SheetDescription className="text-muted-foreground">
-              View and analyze this log entry
+              Inspect this log entry and run an AI debug session
             </SheetDescription>
           </SheetHeader>
 
@@ -663,40 +702,48 @@ export default function LogExplorer() {
                 </div>
               )}
 
-              {/* Actions */}
-              <div className="flex gap-2 pt-1">
+              {/* Debug */}
+              <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4 pt-3">
+                <p className="text-xs text-muted-foreground">
+                  LogSpectra loads this trace, queries your service repo on GitHub when registered, and returns a root-cause
+                  analysis with optional code fixes.
+                </p>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="remediation-pr" className="text-sm font-medium text-foreground">
+                      Open GitHub remediation PR
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Requires GitHub App and service git URL in registry</p>
+                  </div>
+                  <Switch
+                    id="remediation-pr"
+                    checked={createRemediationPr}
+                    onCheckedChange={setCreateRemediationPr}
+                    disabled={isAnalyzing}
+                  />
+                </div>
                 <Button
-                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  className="w-full bg-blue-600 hover:bg-blue-700"
                   onClick={handleAnalyze}
                   disabled={isAnalyzing || !selectedLog.traceId}
                 >
-                  <Brain className="w-4 h-4 mr-2" />
-                  {isAnalyzing ? "Analyzing..." : "Explain This Issue"}
+                  <Bug className="mr-2 h-4 w-4" />
+                  {isAnalyzing ? "Debugging…" : "Debug"}
                 </Button>
               </div>
 
-              {/* AI Analysis */}
               {showAnalysis && (
-                <div className="pt-4 border-t border-border">
-                  {analysisResult && (
-                    <AIAnalysisPanel
-                      result={analysisResult}
-                      events={analysisEvents}
-                      isStreaming={isAnalyzing}
-                      error={analysisError}
-                      traceId={selectedLog.traceId}
-                      onClose={() => setShowAnalysis(false)}
-                    />
-                  )}
-                  {!analysisResult && (isAnalyzing || analysisEvents.length > 0 || analysisError) && (
-                    <AIAnalysisPanel
-                      events={analysisEvents}
-                      isStreaming={isAnalyzing}
-                      error={analysisError}
-                      traceId={selectedLog.traceId}
-                      onClose={() => setShowAnalysis(false)}
-                    />
-                  )}
+                <div className="border-t border-border pt-4">
+                  <AIAnalysisPanel
+                    result={analysisResult}
+                    events={analysisEvents}
+                    isStreaming={isAnalyzing}
+                    error={analysisError}
+                    traceId={selectedLog.traceId}
+                    providerLabel={analyzeProvider}
+                    createRemediationPr={createRemediationPr}
+                    onClose={() => setShowAnalysis(false)}
+                  />
                 </div>
               )}
             </div>
