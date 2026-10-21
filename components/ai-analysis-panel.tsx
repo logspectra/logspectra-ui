@@ -15,6 +15,7 @@ import {
   FileCode2,
   GitBranch,
   Loader2,
+  Wrench,
 } from "lucide-react";
 import type { AnalysisStreamEvent } from "@/lib/api";
 import type { AnalysisResult } from "@/lib/types";
@@ -39,7 +40,9 @@ interface AIAnalysisPanelProps {
   error?: string;
   traceId?: string;
   providerLabel?: string;
-  createRemediationPr?: boolean;
+  isApplyingFix?: boolean;
+  fixError?: string;
+  onApplyFix?: () => void;
   onClose?: () => void;
 }
 
@@ -66,7 +69,9 @@ export function AIAnalysisPanel({
   error = "",
   traceId,
   providerLabel,
-  createRemediationPr = false,
+  isApplyingFix = false,
+  fixError = "",
+  onApplyFix,
   onClose,
 }: AIAnalysisPanelProps) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -107,21 +112,29 @@ export function AIAnalysisPanel({
         ? "done"
         : "idle";
 
+  const sessionSettled = phase === "done" || phase === "failed";
+  const hasApplicableFix =
+    !!result?.suggestedFixes?.some(
+      (fix) => fix.filePath && (fix.search || fix.newContent || fix.replace)
+    );
+
   const steps = [
-    { id: "logs", label: "Trace logs", done: timelineEvents.length > 0 || !!result },
+    { id: "logs", label: "Trace logs", done: timelineEvents.length > 0 || !!result || sessionSettled },
     {
       id: "agent",
-      label: createRemediationPr ? "Codebase + GitHub agent" : "AI debug agent",
-      done: liveTokens.length > 0 || !!result,
-      active: isStreaming && timelineEvents.length > 0 && !result,
+      label: "AI debug agent",
+      done: liveTokens.length > 0 || !!result || sessionSettled,
+      active: isStreaming && timelineEvents.length > 0 && !result && !sessionSettled,
     },
     {
       id: "fix",
-      label: createRemediationPr ? "Remediation PR" : "Diagnosis",
-      done: !!result,
-      active: isStreaming && liveTokens.length > 0 && !result,
+      label: "Diagnosis",
+      done: !!result || (sessionSettled && phase === "failed"),
+      active: isStreaming && liveTokens.length > 0 && !result && !sessionSettled,
     },
   ];
+
+  const visibleTimeline = timelineEvents.slice(-4);
 
   return (
     <div className="space-y-4">
@@ -152,7 +165,6 @@ export function AIAnalysisPanel({
             </div>
             <p className="text-xs text-muted-foreground">
               {traceId ? `Trace ${traceId}` : "Streaming from LogSpectra backend"}
-              {createRemediationPr ? " · GitHub remediation enabled" : ""}
             </p>
           </div>
           {onClose && (
@@ -191,9 +203,12 @@ export function AIAnalysisPanel({
           ))}
         </ol>
 
-        {timelineEvents.length > 0 && (
+        {visibleTimeline.length > 0 && (
           <div className="mt-4 space-y-1.5">
-            {timelineEvents.slice(-4).map((event, index) => (
+            {visibleTimeline.map((event, index) => {
+              const isLiveProgress =
+                event.type === "progress" && isStreaming && index === visibleTimeline.length - 1;
+              return (
               <div
                 key={`${event.type}-${index}-${event.timestamp ?? event.message}`}
                 className="flex items-start gap-2 rounded-lg border border-border/60 bg-background/80 px-3 py-2 text-sm"
@@ -202,8 +217,10 @@ export function AIAnalysisPanel({
                   <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-500" />
                 ) : event.type === "complete" ? (
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                ) : (
+                ) : isLiveProgress ? (
                   <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-blue-500" />
+                ) : (
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500/80" />
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="text-foreground">{humanizeProgress(event.message)}</p>
@@ -212,7 +229,8 @@ export function AIAnalysisPanel({
                   )}
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
 
@@ -303,7 +321,27 @@ export function AIAnalysisPanel({
           </Card>
 
           <div className="space-y-2">
-            <h4 className="text-sm font-semibold text-foreground">Suggested fixes</h4>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-sm font-semibold text-foreground">Suggested fixes</h4>
+              {onApplyFix && hasApplicableFix && (
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  disabled={isApplyingFix || isStreaming || !!result.remediationPrUrl}
+                  onClick={onApplyFix}
+                >
+                  {isApplyingFix ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Wrench className="mr-2 h-4 w-4" />
+                  )}
+                  {result.remediationPrUrl ? "Fix applied" : isApplyingFix ? "Applying…" : "Apply fix on GitHub"}
+                </Button>
+              )}
+            </div>
+            {fixError && (
+              <p className="text-sm text-red-600 dark:text-red-400">{fixError}</p>
+            )}
             {result.suggestedFixes.length > 0 ? (
               result.suggestedFixes.map((fix, index) => (
                 <Card key={`${fix.filePath ?? "fix"}-${index}`} className="overflow-hidden p-0">
@@ -322,7 +360,7 @@ export function AIAnalysisPanel({
                         {fix.effort}
                       </Badge>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => handleCopyCode(fix.newContent || fix.code, index)}>
+                    <Button variant="ghost" size="sm" onClick={() => handleCopyCode(fix.replace || fix.newContent || fix.code, index)}>
                       {copiedIndex === index ? (
                         <Check className="h-4 w-4 text-green-500" />
                       ) : (
@@ -332,10 +370,19 @@ export function AIAnalysisPanel({
                   </div>
                   <div className="space-y-2 p-4">
                     <p className="text-sm text-muted-foreground">{fix.description}</p>
-                    {(fix.newContent || fix.code) && (
-                      <pre className="max-h-64 overflow-auto rounded-md border border-border bg-slate-950 p-3 font-mono text-[11px] leading-relaxed text-slate-100">
-                        {fix.newContent || fix.code}
-                      </pre>
+                    {fix.search && fix.replace != null ? (
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Search / replace patch</p>
+                        <pre className="max-h-64 overflow-auto rounded-md border border-border bg-slate-950 p-3 font-mono text-[11px] leading-relaxed text-slate-100">
+                          {`<<<<<<< SEARCH\n${fix.search}\n=======\n${fix.replace}\n>>>>>>> REPLACE`}
+                        </pre>
+                      </div>
+                    ) : (
+                      (fix.newContent || fix.code) && (
+                        <pre className="max-h-64 overflow-auto rounded-md border border-border bg-slate-950 p-3 font-mono text-[11px] leading-relaxed text-slate-100">
+                          {fix.newContent || fix.code}
+                        </pre>
+                      )
                     )}
                   </div>
                 </Card>

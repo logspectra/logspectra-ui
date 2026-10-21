@@ -44,8 +44,6 @@ import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import type { AnalysisStreamEvent } from "@/lib/api";
 import type { AnalysisResult, LogEntry } from "@/lib/types";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { Eye, Bug, Copy, Check, CheckCircle2 } from "lucide-react";
 
 export default function LogExplorer() {
@@ -63,7 +61,8 @@ export default function LogExplorer() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [analysisEvents, setAnalysisEvents] = useState<AnalysisStreamEvent[]>([]);
   const [analysisError, setAnalysisError] = useState("");
-  const [createRemediationPr, setCreateRemediationPr] = useState(false);
+  const [isApplyingFix, setIsApplyingFix] = useState(false);
+  const [fixError, setFixError] = useState("");
   const [analyzeProvider, setAnalyzeProvider] = useState<AnalyzeProvider>("OPENAI");
   const [copiedTraceId, setCopiedTraceId] = useState(false);
   const [showChart, setShowChart] = useState(false);
@@ -277,6 +276,7 @@ export default function LogExplorer() {
     setIsAnalyzing(true);
     setShowAnalysis(true);
     setAnalysisError("");
+    setFixError("");
     setAnalysisResult(null);
     setAnalysisEvents([]);
 
@@ -307,6 +307,7 @@ export default function LogExplorer() {
 
         if (event.type === "error") {
           setAnalysisError(event.message);
+          setIsAnalyzing(false);
         }
 
         const lastEvent = prev[prev.length - 1];
@@ -320,7 +321,6 @@ export default function LogExplorer() {
     try {
       const analysis = await api.streamAnalyzeLog(traceId, {
         provider: analyzeProvider,
-        createRemediationPr,
         signal: controller.signal,
         onProgress: (event) => {
           if (controller.signal.aborted) return;
@@ -359,6 +359,35 @@ export default function LogExplorer() {
       if (analysisAbortRef.current === controller) {
         analysisAbortRef.current = null;
       }
+    }
+  };
+
+  const handleApplyFix = async () => {
+    const fingerprint = analysisResult?.fingerprint;
+    const traceId = selectedLog?.traceId;
+    if (!fingerprint || !traceId) {
+      setFixError("Run Debug first to generate suggested fixes.");
+      return;
+    }
+
+    setIsApplyingFix(true);
+    setFixError("");
+    try {
+      const remediation = await api.applyRemediation(fingerprint, traceId);
+      setAnalysisResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              remediationPrUrl: remediation.remediationPrUrl,
+              remediationBranch: remediation.remediationBranch,
+              remediationPrNumber: remediation.remediationPrNumber,
+            }
+          : prev
+      );
+    } catch (error) {
+      setFixError(error instanceof Error ? error.message : "Failed to apply fix on GitHub");
+    } finally {
+      setIsApplyingFix(false);
     }
   };
 
@@ -705,23 +734,9 @@ export default function LogExplorer() {
               {/* Debug */}
               <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4 pt-3">
                 <p className="text-xs text-muted-foreground">
-                  LogSpectra loads this trace, queries your service repo on GitHub when registered, and returns a root-cause
-                  analysis with optional code fixes.
+                  Debug loads the trace and suggests fixes. Use <strong>Apply fix</strong> afterward to commit patches on the
+                  remediation branch and open or update the GitHub PR (requires GitHub App + service git URL).
                 </p>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="remediation-pr" className="text-sm font-medium text-foreground">
-                      Open GitHub remediation PR
-                    </Label>
-                    <p className="text-xs text-muted-foreground">Requires GitHub App and service git URL in registry</p>
-                  </div>
-                  <Switch
-                    id="remediation-pr"
-                    checked={createRemediationPr}
-                    onCheckedChange={setCreateRemediationPr}
-                    disabled={isAnalyzing}
-                  />
-                </div>
                 <Button
                   className="w-full bg-blue-600 hover:bg-blue-700"
                   onClick={handleAnalyze}
@@ -739,9 +754,11 @@ export default function LogExplorer() {
                     events={analysisEvents}
                     isStreaming={isAnalyzing}
                     error={analysisError}
+                    fixError={fixError}
                     traceId={selectedLog.traceId}
                     providerLabel={analyzeProvider}
-                    createRemediationPr={createRemediationPr}
+                    isApplyingFix={isApplyingFix}
+                    onApplyFix={handleApplyFix}
                     onClose={() => setShowAnalysis(false)}
                   />
                 </div>

@@ -62,9 +62,12 @@ export interface AnalysisResult {
     description: string;
     code: string;
     filePath?: string;
+    search?: string;
+    replace?: string;
     newContent?: string;
   }[];
   relatedTraceIds: string[];
+  fingerprint?: string;
   analyzedAt: Date;
   cached: boolean;
   remediationPrUrl?: string;

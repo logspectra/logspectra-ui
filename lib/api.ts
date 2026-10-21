@@ -137,17 +137,23 @@ const mapAnalysisResult = (r: AnalysisDto, fallbackTraceId?: string): AnalysisRe
   rootCause: r.rootCause,
   affectedServices: r.affectedServices || [],
   suggestedFixes: (r.suggestedFixes || []).map((f) => {
-    const snippet = f.newContent || f.fix || f.description || "";
+    const patchPreview =
+      f.search && f.replace != null
+        ? `<<<<<<< SEARCH\n${f.search}\n=======\n${f.replace}\n>>>>>>> REPLACE`
+        : f.newContent || f.fix || f.description || "";
     return {
       priority: f.priority,
       effort: f.effort,
       description: f.fix || f.description || "Suggested change",
-      code: snippet,
+      code: patchPreview,
       filePath: f.filePath,
+      search: f.search,
+      replace: f.replace,
       newContent: f.newContent,
     };
   }),
   relatedTraceIds: r.relatedTraceIds || (fallbackTraceId ? [fallbackTraceId] : []),
+  fingerprint: r.fingerprint,
   analyzedAt: new Date(r.analyzedAt),
   cached: r.cached ?? r.cachedResult ?? false,
   remediationPrUrl: r.remediationPrUrl,
@@ -427,7 +433,18 @@ interface SeverityRuleUpsertDto {
 }
 interface LoginResponseDto { token: string; user: { id: string; username: string; role: string; active: boolean; createdAt: string } }
 interface ProjectDto { id: string; name: string; description?: string; createdAt: string; serviceCount?: number }
+export interface RemediationResult {
+  fingerprint: string;
+  service?: string;
+  patchesApplied: number;
+  remediationPrUrl?: string;
+  remediationBranch?: string;
+  remediationPrNumber?: number;
+  message?: string;
+}
+
 interface AnalysisDto {
+  fingerprint?: string;
   severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   confidence: number;
   service?: string;
@@ -440,6 +457,8 @@ interface AnalysisDto {
     priority: "HIGH" | "MEDIUM" | "LOW";
     effort: "QUICK" | "MEDIUM" | "COMPLEX";
     filePath?: string;
+    search?: string;
+    replace?: string;
     newContent?: string;
   }>;
   relatedTraceIds: string[];
@@ -759,6 +778,12 @@ export const api = {
 
   streamAnalyzeLog: async (traceId: string, options: StreamAnalyzeOptions = {}): Promise<AnalysisResult | null> =>
     streamAnalyzeLog(traceId, options),
+
+  applyRemediation: async (fingerprint: string, traceId?: string): Promise<RemediationResult> =>
+    apiRequest<RemediationResult>("/api/v1/logs/remediate", {
+      method: "POST",
+      body: JSON.stringify({ fingerprint, traceId }),
+    }),
 
   getDashboardData: async (timeRange = "24h", customDateRange?: CustomDateRange) => {
     const window = resolveDateWindow(timeRange, customDateRange);
