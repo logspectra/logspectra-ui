@@ -54,7 +54,7 @@ function LayoutContentInner({ children }: { children: React.ReactNode }) {
         <Sidebar />
       </Suspense>
       <Header />
-      <main className="ml-60 mt-[4.25rem] p-6">
+      <main className="ml-60 mt-[4.25rem] min-h-[calc(100vh-4.25rem)] bg-muted/20 p-6">
         {children}
       </main>
     </LiveStreamProvider>

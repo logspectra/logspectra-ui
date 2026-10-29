@@ -5,7 +5,6 @@ import { useProject } from "@/lib/project-context";
 import { api, resolveDateWindow } from "@/lib/api";
 import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import type { LivePoint, LogEntry } from "@/lib/types";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,8 +18,12 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Radio } from "lucide-react";
 import { PageErrorBanner } from "@/components/page-error-banner";
+import { PageHeader, PageShell, LiveStatusPill } from "@/components/page-shell";
+import { PanelCard } from "@/components/panel-card";
+import { AnalyticsChartTooltip } from "@/components/analytics-chart-tooltip";
+import { chartAxisTick, chartGrid, chartMarginWithLegend } from "@/lib/recharts-theme";
 
 const formatTimeTick = (timestamp: number | string) => {
   const numeric = typeof timestamp === "number" ? timestamp : Number(timestamp);
@@ -165,126 +168,104 @@ export default function LiveStream() {
     DEBUG: "bg-muted border-border text-foreground",
   };
 
-  const CustomTooltip = (props: any) => {
-    if (!props.active || !props.payload) return null;
-    return (
-      <div className="rounded border border-border bg-popover p-2 text-popover-foreground shadow-sm">
-        <div className="text-xs text-muted-foreground mb-1">{formatTimeTick(props.label)}</div>
-        {props.payload.map((entry: any, index: number) => (
-          <div key={index} style={{ color: entry.color }} className="text-xs">
-            {entry.name}: {entry.value}
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const streamStatusLabel =
-    streamStatus === "live"
-      ? "SSE connected"
-      : streamStatus === "connecting"
-        ? "Connecting…"
-        : streamStatus === "reconnecting"
-          ? "Reconnecting…"
-          : "Select a project";
+  const CustomTooltip = AnalyticsChartTooltip;
 
   return (
-    <div className="space-y-6">
+    <PageShell className="space-y-6">
+      <PageHeader
+        icon={Radio}
+        eyebrow="Realtime"
+        title="Live stream"
+        description="Per-second throughput and errors from SSE, seeded with recent history."
+        actions={<LiveStatusPill status={streamStatus} />}
+      />
       <PageErrorBanner message={historyLoadError} />
-      <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
-        <span
-          className={`h-2 w-2 rounded-full ${
-            streamStatus === "live" ? "bg-green-500 animate-pulse" : streamStatus === "idle" ? "bg-zinc-500" : "bg-amber-500 animate-pulse"
-          }`}
-        />
-        <span>{streamStatusLabel}</span>
-      </div>
-      {/* Live Charts */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* Live Error Rate */}
-        <Card className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-foreground">Live Error Rate</h3>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-xs text-muted-foreground">Updating</span>
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={liveData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <PanelCard
+          title="Live error rate"
+          action={
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+              Live
+            </span>
+          }
+        >
+          <div className="min-h-[200px] w-full min-w-0">
+            <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={liveData} margin={chartMarginWithLegend}>
+              <CartesianGrid {...chartGrid} />
               <XAxis
                 type="number"
                 dataKey="timestamp"
                 scale="time"
                 domain={["dataMin", "dataMax"]}
-                tick={{ fill: "#71717a", fontSize: 10 }}
+                tick={chartAxisTick}
+                axisLine={false}
+                tickLine={false}
                 tickFormatter={formatTimeTick}
               />
               <YAxis
-                tick={{ fill: "#71717a", fontSize: 10 }}
+                tick={chartAxisTick}
+                axisLine={false}
+                tickLine={false}
                 allowDecimals={false}
                 domain={[0, "dataMax + 1"]}
+                width={32}
               />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip />} labelFormatter={(v) => formatTimeTick(Number(v))} />
               <Line
                 type="monotone"
                 dataKey="errors"
-                stroke="#ef4444"
+                stroke="#dc2626"
                 strokeWidth={2}
                 dot={false}
                 isAnimationActive={false}
+                name="Errors"
               />
             </LineChart>
           </ResponsiveContainer>
-        </Card>
-
-        {/* Live Throughput */}
-        <Card className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-foreground">Live Log Throughput</h3>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-xs text-muted-foreground">Updating</span>
-            </div>
           </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={liveData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+        </PanelCard>
+
+        <PanelCard title="Live log throughput">
+          <div className="min-h-[200px] w-full min-w-0">
+            <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={liveData} margin={chartMarginWithLegend}>
+              <CartesianGrid {...chartGrid} />
               <XAxis
                 dataKey="timestamp"
-                tick={{ fill: "#71717a", fontSize: 10 }}
+                tick={chartAxisTick}
+                axisLine={false}
+                tickLine={false}
                 tickFormatter={formatTimeTick}
               />
               <YAxis
-                tick={{ fill: "#71717a", fontSize: 10 }}
+                tick={chartAxisTick}
+                axisLine={false}
+                tickLine={false}
                 allowDecimals={false}
                 domain={[0, "dataMax + 1"]}
+                width={32}
               />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip />} labelFormatter={(v) => formatTimeTick(Number(v))} />
               <Area
                 type="monotone"
                 dataKey="throughput"
-                stroke="#22c55e"
-                fill="#22c55e"
-                fillOpacity={0.6}
+                stroke="#16a34a"
+                fill="#16a34a"
+                fillOpacity={0.35}
+                name="Logs/sec"
+                isAnimationActive={false}
               />
             </AreaChart>
           </ResponsiveContainer>
-        </Card>
+          </div>
+        </PanelCard>
       </div>
 
-      {/* Terminal Log Feed */}
-      <Card className="p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-foreground">Live Log Stream</h3>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs text-muted-foreground">Live</span>
-          </div>
-        </div>
-
-        <div className="h-96 overflow-y-auto rounded border border-border bg-muted/40 p-4 space-y-1 font-mono text-xs">
+      <PanelCard title="Live log stream" bodyClassName="min-w-0">
+        <div className="h-96 w-full min-w-0 space-y-1 overflow-y-auto overflow-x-auto rounded-lg border border-border/80 bg-muted/30 p-4 font-mono text-xs">
           {[...liveLogEntries].reverse().map((log, idx) => (
             <div
               key={idx}
@@ -332,7 +313,7 @@ export default function LiveStream() {
             }
           }
         `}</style>
-      </Card>
-    </div>
+      </PanelCard>
+    </PageShell>
   );
 }

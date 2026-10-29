@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useProject } from "@/lib/project-context";
 import {
   ComposedChart,
@@ -17,15 +17,39 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import Link from "next/link";
-import { Card } from "@/components/ui/card";
-import { api } from "@/lib/api";
-import { resolveDateWindow } from "@/lib/date-window";
+import { BarChart3 } from "lucide-react";
+import { PanelCard } from "@/components/panel-card";
+import { PageHeader, PageSection, PageShell } from "@/components/page-shell";
+import { AnalyticsChartTooltip } from "@/components/analytics-chart-tooltip";
+import { AnalyticsErrorTriageChart } from "@/components/analytics-error-triage-chart";
 import { PageErrorBanner } from "@/components/page-error-banner";
+import { api } from "@/lib/api";
+import { createEmptyDashboardData } from "@/lib/dashboard-data";
+import { resolveDateWindow } from "@/lib/date-window";
+import {
+  chartAxisTick,
+  chartAxisTickSm,
+  chartGrid,
+  chartLegendStyle,
+  chartMargin,
+  chartMarginWithLegend,
+} from "@/lib/recharts-theme";
+
+const ServiceColors: Record<string, string> = {
+  "api-gateway": "#3b82f6",
+  "auth-service": "#ef4444",
+  "payment-service": "#f97316",
+  "admin-service": "#a855f7",
+  "user-service": "#22c55e",
+};
+
+const servicePalette = ["#3b82f6", "#ef4444", "#f97316", "#a855f7", "#22c55e", "#06b6d4", "#eab308", "#ec4899"];
 
 export default function Analytics() {
   const { selectedProject, timeRange, customDateRange } = useProject();
-  const [dashboardData, setDashboardData] = useState<Awaited<ReturnType<typeof api.getDashboardData>> | null>(null);
+  const [dashboardData, setDashboardData] = useState<Awaited<ReturnType<typeof api.getDashboardData>> | null>(
+    null
+  );
   const [loadError, setLoadError] = useState("");
   const dateWindow = resolveDateWindow(timeRange, customDateRange);
 
@@ -49,7 +73,7 @@ export default function Analytics() {
         if (!cancelled) setDashboardData(data);
       } catch (error) {
         if (!cancelled) {
-          setDashboardData(null);
+          setDashboardData(createEmptyDashboardData());
           setLoadError(error instanceof Error ? error.message : "Failed to load analytics");
         }
       }
@@ -60,303 +84,255 @@ export default function Analytics() {
       cancelled = true;
     };
   }, [selectedProject?.id, timeRange, customDateRange.from?.getTime(), customDateRange.to?.getTime()]);
-  const ServiceColors: Record<string, string> = {
-    "api-gateway": "#3b82f6",
-    "auth-service": "#ef4444",
-    "payment-service": "#f97316",
-    "admin-service": "#a855f7",
-    "user-service": "#22c55e",
-  };
 
-  const servicePalette = ["#3b82f6", "#ef4444", "#f97316", "#a855f7", "#22c55e", "#06b6d4", "#eab308", "#ec4899"];
+  const emptyCharts = createEmptyDashboardData();
+  const chartSource = dashboardData ?? emptyCharts;
 
-  const weeklyTrendData = dashboardData?.weeklyTrend || [];
+  const weeklyTrendData = chartSource.weeklyTrend || [];
   const weeklyTrendChartData = weeklyTrendData.map((row, index) => ({
     ...row,
     periodKey: `${row.date}-${index}`,
   }));
-  const errorTriageData = (dashboardData?.errorTriage || []).map((row, index) => ({
-    ...row,
-    periodKey: row.periodKey || `${row.period}-${index}`,
-  }));
-  const aiUsageData = dashboardData?.aiUsage || [];
-  const ingestionRateData = dashboardData?.ingestionRate || [];
-  const topEndpointsData = (dashboardData?.topEndpoints || []).slice(0, 5);
-  const severityMixData = dashboardData?.severityMix || [];
+  const errorTriageData = chartSource.errorTriage || [];
+  const aiUsageData = chartSource.aiUsage || [];
+  const ingestionRateData = chartSource.ingestionRate || [];
+  const topEndpointsData = (chartSource.topEndpoints || []).slice(0, 5);
+  const severityMixData = chartSource.severityMix || [];
 
-  const trendServices = Array.from(
-    new Set(
-      weeklyTrendData.flatMap((row) =>
-        Object.keys(row).filter((key) => key !== "date" && key !== "errorRate")
-      )
-    )
-  ).filter((service) => weeklyTrendData.some((row) => typeof row[service] === "number"));
+  const trendServices = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          weeklyTrendData.flatMap((row) =>
+            Object.keys(row).filter((key) => key !== "date" && key !== "errorRate")
+          )
+        )
+      ).filter((service) => weeklyTrendData.some((row) => typeof row[service] === "number")),
+    [weeklyTrendData]
+  );
 
   const getServiceColor = (service: string, index: number) => {
     if (ServiceColors[service]) return ServiceColors[service];
     return servicePalette[index % servicePalette.length];
   };
 
-  const CustomTooltip = (props: any) => {
-    if (!props.active || !props.payload) return null;
-    return (
-      <div className="rounded border border-border bg-popover p-2 text-popover-foreground shadow-sm">
-        {props.payload.map((entry: any, index: number) => (
-          <div key={index} style={{ color: entry.color }} className="text-xs">
-            {entry.name}: {entry.value}
-          </div>
-        ))}
-      </div>
-    );
-  };
+  const showCharts = !!dateWindow && !!selectedProject?.id;
 
   return (
-    <div className="space-y-6">
+    <PageShell>
+      <PageHeader
+        icon={BarChart3}
+        eyebrow="Insights"
+        title="Analytics"
+        description="Error trends, triage, ingestion, and severity for the selected project and time range."
+      />
+
       <PageErrorBanner message={loadError} />
+
       {!dateWindow && (
-        <p className="text-sm text-muted-foreground">Select a valid time range to load analytics.</p>
+        <p className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+          Select a valid time range to load analytics.
+        </p>
       )}
-      {/* Row 1: Error Trends */}
-      <div>
-        <h2 className="text-lg font-semibold text-foreground mb-4">Error Trends</h2>
-        <Card className="p-4">
-          <ResponsiveContainer width="100%" height={350}>
-            <ComposedChart data={weeklyTrendChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis
-                dataKey="periodKey"
-                tickFormatter={(_, index) => weeklyTrendChartData[index]?.date ?? ""}
-                tick={{ fill: "#71717a", fontSize: 12 }}
-              />
-              <YAxis
-                yAxisId="left"
-                tick={{ fill: "#71717a", fontSize: 12 }}
-              />
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                tick={{ fill: "#71717a", fontSize: 12 }}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
 
-              {/* Bars for services */}
-              {trendServices.map((service, index) => (
-                <Bar
-                  key={service}
-                  yAxisId="left"
-                  dataKey={service}
-                  fill={getServiceColor(service, index)}
-                  fillOpacity={0.7}
-                />
-              ))}
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="errorRate"
-                stroke="#fbbf24"
-                strokeWidth={2}
-                dot={false}
-                name="Error Rate (%)"
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </Card>
-      </div>
+      {showCharts ? (
+        <>
+          <PageSection title="Error trends">
+            <PanelCard
+              title="Service errors & error rate"
+              description="Stacked error volume by service with overall error rate overlay."
+            >
+              {weeklyTrendChartData.length === 0 ? (
+                <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
+                  No trend data for this range.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={320}>
+                  <ComposedChart data={weeklyTrendChartData} margin={chartMarginWithLegend}>
+                    <CartesianGrid {...chartGrid} />
+                    <XAxis
+                      dataKey="periodKey"
+                      tick={chartAxisTick}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(_, index) => weeklyTrendChartData[index]?.date ?? ""}
+                    />
+                    <YAxis
+                      yAxisId="left"
+                      tick={chartAxisTick}
+                      axisLine={false}
+                      tickLine={false}
+                      width={40}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      tick={chartAxisTick}
+                      axisLine={false}
+                      tickLine={false}
+                      width={44}
+                    />
+                    <Tooltip content={<AnalyticsChartTooltip />} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={chartLegendStyle} />
+                    {trendServices.map((service, index) => (
+                      <Bar
+                        key={service}
+                        yAxisId="left"
+                        dataKey={service}
+                        fill={getServiceColor(service, index)}
+                        fillOpacity={0.75}
+                        radius={[2, 2, 0, 0]}
+                        maxBarSize={48}
+                      />
+                    ))}
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="errorRate"
+                      stroke="#ca8a04"
+                      strokeWidth={2.5}
+                      dot={false}
+                      name="Error rate (%)"
+                      isAnimationActive={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              )}
+            </PanelCard>
+          </PageSection>
 
-      {/* Row 2: Error triage & AI Usage */}
-      <div className="grid grid-cols-2 gap-4">
-        <Card className="p-4">
-          <div className="mb-4 flex items-start justify-between gap-2">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">
-                ERROR Triage Over Time
-              </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Open vs resolved ERROR logs in the selected window. Resolve rows in{" "}
-                <Link href="/explorer" className="text-primary underline-offset-2 hover:underline">
-                  Explorer
-                </Link>{" "}
-                to update triage state.
-              </p>
-            </div>
-          </div>
-          {errorTriageData.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-16 text-center">
-              No ERROR logs in this range.
-            </p>
-          ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={errorTriageData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis
-                  dataKey="periodKey"
-                  tickFormatter={(_, index) => errorTriageData[index]?.period ?? ""}
-                  tick={{ fill: "#71717a", fontSize: 11 }}
-                />
-                <YAxis
-                  tick={{ fill: "#71717a", fontSize: 12 }}
-                  allowDecimals={false}
-                  label={{ value: "ERROR count", angle: -90, position: "insideLeft" }}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend />
-                <Area
-                  type="monotone"
-                  dataKey="open"
-                  stackId="1"
-                  stroke="#ef4444"
-                  fill="#ef4444"
-                  fillOpacity={0.65}
-                  name="Open"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="resolved"
-                  stackId="1"
-                  stroke="#22c55e"
-                  fill="#22c55e"
-                  fillOpacity={0.55}
-                  name="Resolved"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </Card>
+          <section className="grid gap-4 lg:grid-cols-2">
+            <PanelCard
+              title="Error triage over time"
+              description="Open vs resolved ERROR logs by timestamp. Resolve rows in Explorer to update counts."
+            >
+              <AnalyticsErrorTriageChart data={errorTriageData} />
+            </PanelCard>
 
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">
-            AI Analysis Usage
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={aiUsageData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis
-                dataKey="date"
-                tick={{ fill: "#71717a", fontSize: 12 }}
-              />
-              <YAxis tick={{ fill: "#71717a", fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="requested"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                dot={false}
-                name="Analyses Requested"
-              />
-              <Line
-                type="monotone"
-                dataKey="cached"
-                stroke="#22c55e"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                dot={false}
-                name="Cache Hits"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </Card>
-      </div>
+            <PanelCard
+              title="AI analysis usage"
+              description="Requested analyses vs cache hits from the AI pipeline."
+            >
+              {aiUsageData.length === 0 ? (
+                <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
+                  No AI usage in this range.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={aiUsageData} margin={chartMarginWithLegend}>
+                    <CartesianGrid {...chartGrid} />
+                    <XAxis dataKey="date" tick={chartAxisTick} axisLine={false} tickLine={false} />
+                    <YAxis tick={chartAxisTick} axisLine={false} tickLine={false} width={40} allowDecimals={false} />
+                    <Tooltip content={<AnalyticsChartTooltip />} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={chartLegendStyle} />
+                    <Line
+                      type="monotone"
+                      dataKey="requested"
+                      stroke="#2563eb"
+                      strokeWidth={2}
+                      dot={false}
+                      name="Requested"
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="cached"
+                      stroke="#16a34a"
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
+                      dot={false}
+                      name="Cache hits"
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </PanelCard>
+          </section>
 
-      {/* Row 3: Ingestion Rate, Top Endpoints, Dependency Flow */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">
-            Log Ingestion Rate
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={ingestionRateData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis
-                dataKey="hour"
-                tick={{ fill: "#71717a", fontSize: 11 }}
-              />
-              <YAxis tick={{ fill: "#71717a", fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Area
-                type="monotone"
-                dataKey="INFO"
-                stackId="1"
-                stroke="#3b82f6"
-                fill="#3b82f6"
-                fillOpacity={0.6}
-              />
-              <Area
-                type="monotone"
-                dataKey="WARN"
-                stackId="1"
-                stroke="#eab308"
-                fill="#eab308"
-                fillOpacity={0.6}
-              />
-              <Area
-                type="monotone"
-                dataKey="ERROR"
-                stackId="1"
-                stroke="#ef4444"
-                fill="#ef4444"
-                fillOpacity={0.6}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </Card>
+          <PageSection title="Volume & impact">
+            <div className="grid gap-4 lg:grid-cols-3">
+              <PanelCard title="Log ingestion rate" description="INFO, WARN, and ERROR volume over time.">
+                {ingestionRateData.length === 0 ? (
+                  <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
+                    No ingestion data for this range.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <AreaChart data={ingestionRateData} margin={chartMarginWithLegend}>
+                      <CartesianGrid {...chartGrid} />
+                      <XAxis dataKey="hour" tick={chartAxisTickSm} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                      <YAxis tick={chartAxisTick} axisLine={false} tickLine={false} width={40} allowDecimals={false} />
+                      <Tooltip content={<AnalyticsChartTooltip />} />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={chartLegendStyle} />
+                      <Area type="monotone" dataKey="INFO" stackId="1" stroke="#2563eb" fill="#2563eb" fillOpacity={0.35} name="INFO" isAnimationActive={false} />
+                      <Area type="monotone" dataKey="WARN" stackId="1" stroke="#ca8a04" fill="#ca8a04" fillOpacity={0.35} name="WARN" isAnimationActive={false} />
+                      <Area type="monotone" dataKey="ERROR" stackId="1" stroke="#dc2626" fill="#dc2626" fillOpacity={0.4} name="ERROR" isAnimationActive={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </PanelCard>
 
-        <Card className="py-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">
-            Top 5 Affected Endpoints
-          </h3>
-          {topEndpointsData.length === 0 ? (
-            <div className="h-[300px] flex items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-4 text-center text-sm text-muted-foreground">
-              No ERROR logs with an endpoint in this range. HTTP traffic gets endpoint from LogSpectra starter MDC; scheduled jobs should use LogSpectraMdc.runWithRequestContext.
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart
-                data={topEndpointsData}
-                layout="vertical"
-                margin={{ top: 5, right: 15, bottom: 5 }}
+              <PanelCard
+                title="Top affected endpoints"
+                description="ERROR count by HTTP route (from LogSpectra MDC)."
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis type="number" tick={{ fill: "#71717a", fontSize: 12 }} />
-                <YAxis
-                  dataKey="name"
-                  type="category"
-                  tick={{ fill: "#71717a", fontSize: 11 }}
-                  width={195}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="value" fill="#dc2626" radius={[0, 8, 8, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </Card>
+                {topEndpointsData.length === 0 ? (
+                  <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-4 text-center">
+                    <p className="text-sm font-medium text-foreground">No endpoint-tagged errors</p>
+                    <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
+                      Enable endpoint on services via LogSpectra starter MDC, or use runWithRequestContext for jobs.
+                    </p>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart
+                      data={topEndpointsData}
+                      layout="vertical"
+                      margin={{ ...chartMargin, left: 8, right: 20 }}
+                    >
+                      <CartesianGrid {...chartGrid} horizontal={false} />
+                      <XAxis type="number" tick={chartAxisTick} axisLine={false} tickLine={false} allowDecimals={false} />
+                      <YAxis
+                        dataKey="name"
+                        type="category"
+                        tick={chartAxisTickSm}
+                        axisLine={false}
+                        tickLine={false}
+                        width={168}
+                      />
+                      <Tooltip content={<AnalyticsChartTooltip />} />
+                      <Bar dataKey="value" fill="#dc2626" radius={[0, 6, 6, 0]} maxBarSize={22} name="Errors" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </PanelCard>
 
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">
-            Error Severity Mix Over Time
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={severityMixData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis
-                dataKey="period"
-                tick={{ fill: "#71717a", fontSize: 11 }}
-              />
-              <YAxis tick={{ fill: "#71717a", fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Bar dataKey="CRITICAL" stackId="1" fill="#dc2626" fillOpacity={0.8}/>
-              <Bar dataKey="HIGH" stackId="1" fill="#ea580c" fillOpacity={0.8} />
-              <Bar dataKey="MEDIUM" stackId="1" fill="#eab308" fillOpacity={0.8} />
-              <Bar dataKey="LOW" stackId="1" fill="#3b82f6" fillOpacity={0.8} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-      </div>
-
-    </div>
+              <PanelCard title="Severity mix" description="Stacked issue severity by period.">
+                {severityMixData.length === 0 ? (
+                  <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
+                    No severity data for this range.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={severityMixData} margin={chartMarginWithLegend}>
+                      <CartesianGrid {...chartGrid} />
+                      <XAxis dataKey="period" tick={chartAxisTickSm} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                      <YAxis tick={chartAxisTick} axisLine={false} tickLine={false} width={40} allowDecimals={false} />
+                      <Tooltip content={<AnalyticsChartTooltip />} />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={chartLegendStyle} />
+                      <Bar dataKey="CRITICAL" stackId="1" fill="#dc2626" radius={[0, 0, 0, 0]} name="Critical" />
+                      <Bar dataKey="HIGH" stackId="1" fill="#ea580c" name="High" />
+                      <Bar dataKey="MEDIUM" stackId="1" fill="#ca8a04" name="Medium" />
+                      <Bar dataKey="LOW" stackId="1" fill="#2563eb" radius={[4, 4, 0, 0]} name="Low" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </PanelCard>
+            </div>
+          </PageSection>
+        </>
+      ) : null}
+    </PageShell>
   );
 }

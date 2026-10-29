@@ -41,8 +41,13 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { api } from "@/lib/api";
-import { TrendingUp, TrendingDown, Brain } from "lucide-react";
+import { TrendingUp, TrendingDown, Brain, LayoutDashboard } from "lucide-react";
 import { PageErrorBanner } from "@/components/page-error-banner";
+import { PageHeader, PageShell, LiveStatusPill } from "@/components/page-shell";
+import { PanelCard } from "@/components/panel-card";
+import { StatCard } from "@/components/stat-card";
+import { AnalyticsChartTooltip } from "@/components/analytics-chart-tooltip";
+import { chartAxisTick, chartGrid, chartMarginWithLegend } from "@/lib/recharts-theme";
 
 export default function Dashboard() {
   const { selectedProject, timeRange, customDateRange, applyCustomWindow } = useProject();
@@ -204,18 +209,7 @@ export default function Dashboard() {
     return "bg-red-500";
   };
 
-  const CustomTooltip = (props: any) => {
-    if (!props.active || !props.payload) return null;
-    return (
-      <div className="bg-card border border-border rounded p-2">
-        {props.payload.map((entry: any, index: number) => (
-          <div key={index} style={{ color: entry.color }} className="text-xs">
-            {entry.name}: {entry.value}
-          </div>
-        ))}
-      </div>
-    );
-  };
+  const CustomTooltip = AnalyticsChartTooltip;
 
   const formatLogCount = (value: number): string => {
     const abs = Math.abs(value);
@@ -232,124 +226,63 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="space-y-6">
+    <PageShell className="space-y-6">
       <PageErrorBanner message={loadError} />
-      {/* Project Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">{selectedProject?.name || "Dashboard"}</h1>
-          <p className="text-sm text-muted-foreground mt-1">Project ID: {selectedProject?.id}</p>
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span
-              className={`h-2 w-2 rounded-full ${
-                streamStatus === "live"
-                  ? "bg-green-500 animate-pulse"
-                  : streamStatus === "idle"
-                    ? "bg-zinc-500"
-                    : "bg-amber-500 animate-pulse"
-              }`}
-            />
-            <span>
-              {streamStatus === "live"
-                ? "Live updates on"
-                : streamStatus === "connecting"
-                  ? "Connecting live stream…"
-                  : streamStatus === "reconnecting"
-                    ? "Reconnecting…"
-                    : "Live updates off"}
+      <PageHeader
+        icon={LayoutDashboard}
+        eyebrow="Overview"
+        title={selectedProject?.name || "Dashboard"}
+        description={
+          selectedProject?.id
+            ? `Monitoring ${stats.serviceCount || 0} services in this project`
+            : undefined
+        }
+        actions={<LiveStatusPill status={streamStatus} />}
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Total logs"
+          value={formatLogCount(smoothTotalLogs)}
+          hint={<span className="text-emerald-600">+{stats.totalLogsChangePercent}% vs last period</span>}
+          aside={<DashboardMiniSparkline data={statSparklines?.totalLogs ?? []} color="#16a34a" />}
+        />
+        <StatCard
+          label="Error count"
+          value={smoothErrorCount.toLocaleString()}
+          hint={
+            <Badge className="bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-200">
+              ↑ {stats.errorChangePercent}% spike
+            </Badge>
+          }
+          aside={<DashboardMiniSparkline data={statSparklines?.errorCount ?? []} color="#dc2626" />}
+        />
+        <StatCard
+          label="Affected services"
+          value={`${smoothAffectedCount} / ${stats.serviceCount}`}
+          hint={
+            <span className="line-clamp-2 text-orange-600 dark:text-orange-400">
+              {stats.affectedServices.services.join(", ") || "None"}
             </span>
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-muted-foreground">Services</p>
-            <p className="text-2xl font-bold text-foreground">{stats.serviceCount || 0}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Row 1: Stat Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <Card className="bg-card border-border p-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Total Logs</p>
-              <p className="text-3xl font-bold text-foreground mt-2 tabular-nums">
-                {formatLogCount(smoothTotalLogs)}
-              </p>
-              <p className="text-xs text-green-600 mt-2">
-                +{stats.totalLogsChangePercent}% vs last period
-              </p>
-            </div>
-            <DashboardMiniSparkline
-              data={statSparklines?.totalLogs ?? []}
-              color="#16a34a"
-            />
-          </div>
-        </Card>
-
-        <Card className="bg-card border-border p-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Error Count</p>
-              <p className="text-3xl font-bold text-foreground mt-2 tabular-nums">
-                {smoothErrorCount.toLocaleString()}
-              </p>
-              <div className="flex items-center gap-1 mt-2">
-                <Badge className="bg-red-100 text-red-800">
-                  ↑ {stats.errorChangePercent}% spike
-                </Badge>
-              </div>
-            </div>
-            <DashboardMiniSparkline
-              data={statSparklines?.errorCount ?? []}
-              color="#dc2626"
-            />
-          </div>
-        </Card>
-
-        <Card className="bg-card border-border p-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Affected Services</p>
-              <p className="text-3xl font-bold text-foreground mt-2 tabular-nums">
-                {smoothAffectedCount} of {stats.serviceCount}
-              </p>
-              <p className="text-xs text-orange-600 mt-2">
-                {stats.affectedServices.services.join(", ")}
-              </p>
-            </div>
-            <DashboardMiniSparkline
-              data={statSparklines?.affectedServices ?? []}
-              color="#ea580c"
-            />
-          </div>
-        </Card>
-
-        <Card className="bg-card border-border p-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">AI Analyses Run</p>
-              <p className="text-3xl font-bold text-foreground mt-2 tabular-nums">
-                {smoothAiAnalyses}
-              </p>
-              <p className="text-xs text-blue-600 mt-2">
-                {stats.aiCached} cached
-              </p>
-            </div>
-            <DashboardMiniSparkline
-              data={statSparklines?.aiAnalyses ?? []}
-              color="#2563eb"
-            />
-          </div>
-        </Card>
+          }
+          aside={<DashboardMiniSparkline data={statSparklines?.affectedServices ?? []} color="#ea580c" />}
+        />
+        <StatCard
+          label="AI analyses"
+          value={smoothAiAnalyses}
+          hint={<span className="text-blue-600 dark:text-blue-400">{stats.aiCached} cached</span>}
+          aside={<DashboardMiniSparkline data={statSparklines?.aiAnalyses ?? []} color="#2563eb" />}
+        />
       </div>
 
       {/* Row 2: Main Charts */}
       <div className="grid grid-cols-12 gap-4">
         {/* Error Rate Over Time */}
-        <Card className="col-span-5 bg-card border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Error Rate Over Time</h3>
+        <PanelCard
+          className="col-span-5"
+          title="Error rate over time"
+          description="Drag on the chart to narrow the dashboard time window."
+        >
           <DashboardErrorRateChart
             data={errorTimelineData}
             dateWindow={dateWindow}
@@ -358,11 +291,9 @@ export default function Dashboard() {
             onBrushRange={(from, to) => void applyCustomWindow(from, to)}
             customTooltip={CustomTooltip}
           />
-        </Card>
+        </PanelCard>
 
-        {/* Error Distribution by Service */}
-        <Card className="col-span-4 bg-card border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Error Distribution by Service</h3>
+        <PanelCard className="col-span-4" title="Error distribution by service">
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
@@ -410,23 +341,14 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </Card>
+        </PanelCard>
 
-        {/* Log Volume by Level */}
-        <Card className="col-span-3 bg-card border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Log Volume by Level</h3>
+        <PanelCard className="col-span-3" title="Log volume by level">
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={levelVolumeData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis
-                dataKey="name"
-                tick={{ fill: "#6b7280", fontSize: 12 }}
-                axisLine={false}
-              />
-              <YAxis
-                tick={{ fill: "#6b7280", fontSize: 12 }}
-                axisLine={false}
-              />
+            <BarChart data={levelVolumeData} margin={chartMarginWithLegend}>
+              <CartesianGrid {...chartGrid} />
+              <XAxis dataKey="name" tick={chartAxisTick} axisLine={false} tickLine={false} />
+              <YAxis tick={chartAxisTick} axisLine={false} tickLine={false} width={36} allowDecimals={false} />
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="value" fill="#3b82f6" radius={[8, 8, 0, 0]}>
                 {levelVolumeData.map((entry, index) => (
@@ -440,16 +362,11 @@ export default function Dashboard() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-        </Card>
+        </PanelCard>
       </div>
 
-      {/* Row 3: Secondary Charts */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* Error Heatmap */}
-        <Card className="bg-card border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">
-            Error heatmap by service × time
-          </h3>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <PanelCard title="Error heatmap by service × time">
           {heatmapServices.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">No errors in this time range.</p>
           ) : (
@@ -485,11 +402,9 @@ export default function Dashboard() {
             </div>
           </div>
           )}
-        </Card>
+        </PanelCard>
 
-        {/* Top Error Types */}
-        <Card className="bg-card border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Top 5 Error Types</h3>
+        <PanelCard title="Top 5 error types">
           {topErrorsData.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">No error types in this time range.</p>
           ) : (
@@ -526,12 +441,10 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
           )}
-        </Card>
+        </PanelCard>
       </div>
 
-      {/* Row 4: Recent Critical Issues Table */}
-      <Card className="bg-card border-border p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-4">Recent Critical Issues</h3>
+      <PanelCard title="Recent critical issues">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -610,8 +523,7 @@ export default function Dashboard() {
             </TableBody>
           </Table>
         </div>
-      </Card>
-
-    </div>
+      </PanelCard>
+    </PageShell>
   );
 }

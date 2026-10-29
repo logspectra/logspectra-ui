@@ -6,8 +6,10 @@ import { useProject } from '@/lib/project-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { Plus, Folder, LogOut } from 'lucide-react';
+import { Plus, Folder, LogOut, Zap } from 'lucide-react';
 import { PageErrorBanner } from '@/components/page-error-banner';
+import { EmptyState } from '@/components/empty-state';
+import { PageHeader, PageShell } from '@/components/page-shell';
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -57,131 +59,130 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-foreground">LogSpectra</h1>
-              <p className="text-sm text-muted-foreground mt-1">Welcome, {user.name}</p>
+    <div className="min-h-screen bg-muted/30">
+      <header className="border-b border-border/80 bg-card/95 backdrop-blur">
+        <PageShell className="flex items-center justify-between py-5 pb-8">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-lg bg-primary p-2 shadow-sm">
+              <Zap className="h-5 w-5 text-primary-foreground" />
             </div>
-            <Button variant="outline" size="sm" onClick={handleLogout} className="flex items-center gap-2">
-              <LogOut className="w-4 h-4" />
-              Logout
-            </Button>
+            <div>
+              <p className="text-lg font-semibold tracking-tight">LogSpectra</p>
+              <p className="text-xs text-muted-foreground">Welcome, {user.name}</p>
+            </div>
           </div>
-        </div>
+          <Button variant="outline" size="sm" onClick={handleLogout}>
+            <LogOut className="mr-2 h-4 w-4" />
+            Logout
+          </Button>
+        </PageShell>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <PageErrorBanner message={actionError} />
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-foreground">Your Projects</h2>
-          <Button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2">
-            <Plus className="w-4 h-4" />
-            New Project
-          </Button>
-        </div>
+      <main className="py-10">
+        <PageShell>
+          <PageHeader
+            title="Your projects"
+            description="Select a project to open the dashboard, or create a new one."
+            actions={
+              <Button onClick={() => setShowCreateModal(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                New project
+              </Button>
+            }
+          />
+          <PageErrorBanner message={actionError} />
 
-        {/* Projects Grid */}
-        {projects.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {projects.map((project) => (
-              <Card
-                key={project.id}
-                className="p-6 hover:border-primary/50 transition-colors cursor-pointer group"
-                onClick={() => void handleSelectProject(project.id)}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                      <Folder className="w-5 h-5 text-primary" />
+          {projects.length > 0 ? (
+            <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {projects.map((project) => (
+                <Card
+                  key={project.id}
+                  className="cursor-pointer gap-0 border-border/80 py-0 shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
+                  onClick={() => void handleSelectProject(project.id)}
+                >
+                  <div className="p-6">
+                    <div className="mb-4 flex items-start gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                        <Folder className="h-5 w-5 text-primary" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-foreground">{project.name}</h3>
+                        <p className="truncate text-xs text-muted-foreground">{project.id}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground">{project.name}</h3>
-                      <p className="text-xs text-muted-foreground">Project ID: {project.id}</p>
+                    {project.description ? (
+                      <p className="mb-4 text-sm text-muted-foreground">{project.description}</p>
+                    ) : null}
+                    <div className="flex items-center justify-between border-t border-border/60 pt-4 text-xs text-muted-foreground">
+                      <span>{project.serviceCount ?? 0} services</span>
+                      <span>Open →</span>
                     </div>
                   </div>
-                </div>
-
-                {project.description && (
-                  <p className="text-sm text-muted-foreground mb-4">{project.description}</p>
-                )}
-
-                <div className="flex items-center justify-between text-xs text-muted-foreground pt-4 border-t border-border">
-                  <span>{project.serviceCount ?? 0} services</span>
-                  <span>Updated today</span>
-                </div>
-
-                <Button variant="secondary" className="w-full mt-4 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                  Enter Project
-                </Button>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <Folder className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-            <p className="text-muted-foreground mb-6">No projects yet. Create one to get started.</p>
-            <Button onClick={() => setShowCreateModal(true)}>Create Your First Project</Button>
-          </div>
-        )}
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={Folder}
+              title="No projects yet"
+              description="Create a project to start ingesting logs and using the dashboard."
+              action={
+                <Button onClick={() => setShowCreateModal(true)}>Create your first project</Button>
+              }
+              className="mt-8"
+            />
+          )}
+        </PageShell>
       </main>
 
-      {/* Create Project Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md">
-            <div className="p-6">
-              <h2 className="text-xl font-bold text-foreground mb-4">Create New Project</h2>
-
-              <form onSubmit={handleCreateProject} className="space-y-4">
-                <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-foreground mb-1">
-                    Project Name
-                  </label>
-                  <Input
-                    id="name"
-                    value={projectName}
-                    onChange={(e) => setProjectName(e.target.value)}
-                    placeholder="e.g., Production API"
-                    autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="desc" className="block text-sm font-medium text-foreground mb-1">
-                    Description (optional)
-                  </label>
-                  <Input
-                    id="desc"
-                    value={projectDesc}
-                    onChange={(e) => setProjectDesc(e.target.value)}
-                    placeholder="e.g., Main production services"
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => {
-                      setShowCreateModal(false);
-                      setProjectName('');
-                      setProjectDesc('');
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="flex-1" disabled={!projectName.trim()}>
-                    Create Project
-                  </Button>
-                </div>
-              </form>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-md gap-0 py-0 shadow-lg">
+            <div className="border-b border-border/60 bg-muted/30 px-6 py-4">
+              <h2 className="text-lg font-semibold">Create project</h2>
             </div>
+            <form onSubmit={handleCreateProject} className="space-y-4 p-6">
+              <div>
+                <label htmlFor="name" className="mb-1 block text-sm font-medium">
+                  Project name
+                </label>
+                <Input
+                  id="name"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  placeholder="e.g., Production API"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label htmlFor="desc" className="mb-1 block text-sm font-medium">
+                  Description (optional)
+                </label>
+                <Input
+                  id="desc"
+                  value={projectDesc}
+                  onChange={(e) => setProjectDesc(e.target.value)}
+                  placeholder="Main production services"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setProjectName('');
+                    setProjectDesc('');
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1" disabled={!projectName.trim()}>
+                  Create
+                </Button>
+              </div>
+            </form>
           </Card>
         </div>
       )}

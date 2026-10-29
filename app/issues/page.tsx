@@ -19,8 +19,11 @@ import {
 } from "recharts";
 import { api } from "@/lib/api";
 import type { IssueGroup, IssueGroupBy } from "@/lib/types";
-import { TrendingUp, TrendingDown, Brain } from "lucide-react";
+import { TrendingUp, TrendingDown, Brain, AlertCircle } from "lucide-react";
 import { PageErrorBanner } from "@/components/page-error-banner";
+import { PageHeader, PageShell } from "@/components/page-shell";
+import { PanelCard } from "@/components/panel-card";
+import { StatCard } from "@/components/stat-card";
 
 export default function Issues() {
   const { selectedProject, timeRange, customDateRange } = useProject();
@@ -122,9 +125,16 @@ export default function Issues() {
   };
 
   return (
-    <div className="space-y-6">
+    <PageShell className="space-y-6">
+      <PageHeader
+        icon={AlertCircle}
+        eyebrow="Triage"
+        title="Issues"
+        description="Grouped errors with severity, trends, and trace context for the selected window."
+      />
       <PageErrorBanner message={loadError} />
-      <Card className="p-4">
+
+      <PanelCard title="Filters" variant="compact">
         <div className="flex items-end gap-4 flex-wrap">
           <div className="flex-1 min-w-64">
             <label className="text-xs text-muted-foreground block mb-2">Search</label>
@@ -166,31 +176,18 @@ export default function Issues() {
             </Select>
           </div>
         </div>
-      </Card>
+      </PanelCard>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="p-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Open Issues</p>
-            <p className="text-3xl font-bold text-foreground mt-2">{stats.open}</p>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Critical Issues</p>
-            <p className="text-3xl font-bold text-foreground mt-2 text-red-500">{stats.critical}</p>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Affected Services</p>
-            <p className="text-3xl font-bold text-foreground mt-2">{stats.affectedServices}</p>
-          </div>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <StatCard label="Open issues" value={stats.open} />
+        <StatCard
+          label="Critical"
+          value={stats.critical}
+          hint={<span className="text-red-600">Requires immediate attention</span>}
+        />
+        <StatCard label="Affected services" value={stats.affectedServices} />
       </div>
 
-      {/* Issues List */}
       <div className="space-y-3">
         {filteredIssues.map((issue) => (
           <Card
@@ -340,6 +337,6 @@ export default function Issues() {
           </Card>
         )}
       </div>
-    </div>
+    </PageShell>
   );
 }

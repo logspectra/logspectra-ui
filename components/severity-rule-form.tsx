@@ -65,9 +65,13 @@ export function SeverityRuleForm({
     onClose();
   };
 
-  const handleSubmit = form.handleSubmit((data) => {
-    onSave(data);
-    handleClose();
+  const handleSubmit = form.handleSubmit(async (data) => {
+    try {
+      await onSave(data);
+      handleClose();
+    } catch {
+      // Keep dialog open; parent sets PageErrorBanner
+    }
   });
 
   return (
@@ -141,18 +145,12 @@ export function SeverityRuleForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="*">All Services</SelectItem>
-                    {services.length > 0 ? (
-                      services.map((service) => (
-                        <SelectItem key={service} value={service}>
-                          {service}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="" disabled>
-                        No services available
+                    <SelectItem value="*">All services</SelectItem>
+                    {services.map((service) => (
+                      <SelectItem key={service} value={service}>
+                        {service}
                       </SelectItem>
-                    )}
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormDescription>

@@ -13,8 +13,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { AnalyticsChartTooltip } from "@/components/analytics-chart-tooltip";
 import type { ResolvedDateWindow } from "@/lib/date-window";
 import type { TimeSeriesPoint } from "@/lib/types";
+import {
+  chartAxisTick,
+  chartGrid,
+  chartLegendStyle,
+  chartMarginWithLegend,
+} from "@/lib/recharts-theme";
 
 type ChartPoint = TimeSeriesPoint & { _epochMs: number };
 
@@ -147,7 +154,7 @@ export function DashboardErrorRateChart({
 
   if (chartData.length === 0 || serviceKeys.length === 0) {
     return (
-      <div className="flex h-[300px] items-center justify-center rounded-md border border-dashed border-border text-sm text-muted-foreground">
+      <div className="flex h-[300px] items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 text-sm text-muted-foreground">
         No error metrics in this time range.
       </div>
     );
@@ -164,6 +171,7 @@ export function DashboardErrorRateChart({
         <ResponsiveContainer width="100%" height={300}>
           <LineChart
             data={chartData}
+            margin={chartMarginWithLegend}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
@@ -172,19 +180,20 @@ export function DashboardErrorRateChart({
             }}
             style={{ cursor: "crosshair", userSelect: "none" }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <CartesianGrid {...chartGrid} />
             <XAxis
               type="number"
               dataKey="_epochMs"
               domain={xDomain}
               scale="time"
-              tick={{ fill: "#6b7280", fontSize: 12 }}
+              tick={chartAxisTick}
               tickFormatter={formatEpochTick}
               axisLine={false}
+              tickLine={false}
             />
-          <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} axisLine={false} allowDecimals={false} />
+          <YAxis tick={chartAxisTick} axisLine={false} tickLine={false} allowDecimals={false} width={36} />
           <Tooltip content={<TooltipContent />} labelFormatter={(ms) => formatEpochTick(Number(ms))} />
-          <Legend />
+          <Legend iconType="circle" iconSize={8} wrapperStyle={chartLegendStyle} />
           {maxY > 0 && maxY < 250 ? (
             <ReferenceLine
               y={Math.max(10, Math.round(maxY * 1.5))}

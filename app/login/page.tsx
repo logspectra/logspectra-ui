@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useProject } from '@/lib/project-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import { Zap } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,7 +32,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     const success = await login(username, password);
-    
+
     if (success) {
       const next = searchParams.get('next');
       const target =
@@ -39,7 +41,7 @@ export default function LoginPage() {
     } else {
       setError('Invalid username or password');
     }
-    
+
     setIsLoading(false);
   };
 
@@ -48,63 +50,77 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="w-full max-w-md">
-        <div className="bg-card border border-border rounded-lg shadow-lg p-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">LogSpectra</h1>
-          <p className="text-muted-foreground mb-8">Sign in to your account</p>
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-foreground mb-2">
-                Username
-              </label>
-              <Input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="admin"
-                className="w-full"
-                required
-              />
+    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-6">
+      <div className="grid w-full max-w-4xl overflow-hidden rounded-2xl border border-border/80 bg-card shadow-lg lg:grid-cols-2">
+        <div className="hidden flex-col justify-between bg-primary p-10 text-primary-foreground lg:flex">
+          <div className="flex items-center gap-2">
+            <div className="rounded-lg bg-primary-foreground/15 p-2">
+              <Zap className="h-6 w-6" />
             </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-foreground mb-2">
-                Password
-              </label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                className="w-full"
-                required
-              />
-            </div>
-
-            {error && (
-              <div className="bg-destructive/10 border border-destructive/20 text-destructive rounded-md p-3 text-sm">
-                {error}
-              </div>
-            )}
-
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Signing in...' : 'Sign In'}
-            </Button>
-          </form>
-
-          <div className="mt-8 pt-8 border-t border-border">
-            <p className="text-xs text-muted-foreground mb-4">Demo credentials:</p>
-            <ul className="space-y-2 text-xs text-muted-foreground">
-              <li>
-                <strong>Admin:</strong> admin / admin
-              </li>
-            </ul>
+            <span className="text-xl font-semibold tracking-tight">LogSpectra</span>
           </div>
+          <div>
+            <p className="text-lg font-medium leading-snug">AI-powered log analysis for production teams.</p>
+            <p className="mt-3 text-sm text-primary-foreground/80">
+              Search logs, triage issues, and run analysis in one place.
+            </p>
+          </div>
+          <p className="text-xs text-primary-foreground/60">Secure sign-in required</p>
         </div>
+
+        <Card className="rounded-none border-0 py-8 shadow-none">
+          <div className="px-8">
+            <div className="mb-8 lg:hidden">
+              <div className="mb-2 flex items-center gap-2 text-primary">
+                <Zap className="h-5 w-5" />
+                <span className="font-semibold">LogSpectra</span>
+              </div>
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Use your LogSpectra account</p>
+
+            <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+              <div>
+                <label htmlFor="username" className="mb-2 block text-sm font-medium">
+                  Username
+                </label>
+                <Input
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="admin"
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="password" className="mb-2 block text-sm font-medium">
+                  Password
+                </label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  required
+                />
+              </div>
+              {error ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </div>
+              ) : null}
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? 'Signing in…' : 'Sign in'}
+              </Button>
+            </form>
+
+            <div className="mt-8 border-t border-border/60 pt-6">
+              <p className="text-xs text-muted-foreground">Demo: admin / password123</p>
+            </div>
+          </div>
+        </Card>
       </div>
     </div>
   );

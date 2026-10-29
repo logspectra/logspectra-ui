@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Settings as SettingsIcon, Save } from "lucide-react";
+import { PageHeader, PageShell } from "@/components/page-shell";
+import { PanelCard } from "@/components/panel-card";
 import { api, AiSettings } from "@/lib/api";
 
 const OLLAMA_DEFAULT_PORT = "11434";
@@ -153,17 +155,16 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <SettingsIcon className="w-5 h-5 text-blue-500" />
-          <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-        </div>
-        <p className="text-sm text-muted-foreground">Configure LogSpectra dashboard and monitoring preferences</p>
-        <p className="text-xs text-muted-foreground mt-2">
-          Sections below <Badge variant="secondary" className="mx-1">Coming soon</Badge> are UI placeholders; only AI Provider Settings is wired to the backend today.
-        </p>
-      </div>
+    <PageShell className="max-w-2xl space-y-6">
+      <PageHeader
+        icon={SettingsIcon}
+        eyebrow="Configuration"
+        title="Settings"
+        description="Dashboard preferences and AI provider configuration."
+      />
+      <p className="text-xs text-muted-foreground -mt-4">
+        Sections marked <Badge variant="secondary" className="mx-1">Coming soon</Badge> are placeholders; AI Provider Settings is wired to the backend.
+      </p>
 
       <Card className="p-6 opacity-80"><div className="flex items-center justify-between mb-4"><h3 className="text-lg font-semibold text-foreground">Alert Configuration</h3><Badge variant="secondary">Coming soon</Badge></div><div className="space-y-4"><div><Label className="text-sm text-muted-foreground mb-2 block">Error Rate Alert Threshold</Label><div className="flex items-center gap-2"><Input type="number" value={settings.alertThreshold} disabled readOnly className="bg-input border-border text-foreground max-w-xs" /><span className="text-sm text-muted-foreground">errors per minute</span></div></div></div></Card>
 
@@ -231,6 +232,6 @@ export default function Settings() {
       <Card className="p-6"><h3 className="text-lg font-semibold text-foreground mb-4">System Status</h3><div className="space-y-3"><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Dashboard Version</span><Badge className="bg-blue-900 text-blue-100">v1.0.0</Badge></div><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Data Source</span><Badge className="bg-green-900 text-green-100">Backend API</Badge></div><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Last Updated</span><span className="text-sm text-foreground">{new Date().toLocaleString()}</span></div></div></Card>
 
       <div className="flex gap-2"><Button onClick={() => void handleSave()} className="bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4 mr-2" />Save Settings</Button>{saved && <Badge className="bg-green-900 text-green-100 animate-pulse">Settings saved successfully</Badge>}</div>
-    </div>
+    </PageShell>
   );
 }

@@ -44,8 +44,12 @@ import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import type { AnalysisStreamEvent } from "@/lib/api";
 import type { AnalysisResult, LogEntry } from "@/lib/types";
-import { Eye, Bug, Copy, Check, CheckCircle2 } from "lucide-react";
+import { Eye, Bug, Copy, Check, CheckCircle2, Search } from "lucide-react";
 import { PageErrorBanner } from "@/components/page-error-banner";
+import { PageHeader, PageShell } from "@/components/page-shell";
+import { PanelCard } from "@/components/panel-card";
+import { AnalyticsChartTooltip } from "@/components/analytics-chart-tooltip";
+import { chartAxisTick, chartGrid } from "@/lib/recharts-theme";
 
 export default function LogExplorer() {
   const { selectedProject, timeRange, customDateRange } = useProject();
@@ -446,9 +450,16 @@ export default function LogExplorer() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Filter Bar */}
-      <Card className="p-4">
+    <PageShell className="space-y-6">
+      <PageHeader
+        icon={Search}
+        eyebrow="Investigate"
+        title="Log Explorer"
+        description="Search, triage, and run AI analysis on logs in the selected time range."
+      />
+      <PageErrorBanner message={searchLoadError || resolveError} />
+
+      <PanelCard title="Filters" variant="compact">
         <div className="flex items-end gap-4 flex-wrap">
           <div className="flex-1 min-w-64">
             <label className="text-xs text-muted-foreground block mb-2">Search</label>
@@ -513,24 +524,16 @@ export default function LogExplorer() {
             </Button>
           </div>
         </div>
-      </Card>
+      </PanelCard>
 
-      {/* Collapsible Chart */}
       {showChart && (
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Log Volume over Time</h3>
+        <PanelCard title="Log volume over time" variant="compact">
           <ResponsiveContainer width="100%" height={80}>
             <AreaChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis dataKey="label" tick={{ fill: "#71717a", fontSize: 10 }} minTickGap={24} />
-              <YAxis tick={{ fill: "#71717a", fontSize: 10 }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#18181b",
-                  border: "1px solid #3f3f46",
-                  color: "#fff",
-                }}
-              />
+              <CartesianGrid {...chartGrid} />
+              <XAxis dataKey="label" tick={chartAxisTick} axisLine={false} tickLine={false} minTickGap={24} />
+              <YAxis tick={chartAxisTick} axisLine={false} tickLine={false} width={28} />
+              <Tooltip content={<AnalyticsChartTooltip />} />
               <Area
                 type="monotone"
                 dataKey="total"
@@ -549,27 +552,29 @@ export default function LogExplorer() {
               />
             </AreaChart>
           </ResponsiveContainer>
-        </Card>
+        </PanelCard>
       )}
 
-      <PageErrorBanner message={searchLoadError || resolveError} />
-
-      {/* Logs Table */}
-      <Card className="p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-xs text-muted-foreground">
-            {isLoadingLogs ? "Loading logs..." : `Showing ${logs.length} of ${totalLogs} logs`}
-            {selectedLogIds.size > 0 && <span className="ml-4 font-semibold text-foreground">{selectedLogIds.size} selected</span>}
-          </div>
-          {selectedLogIds.size > 0 && (
+      <PanelCard
+        title="Results"
+        action={
+          selectedLogIds.size > 0 ? (
             <Button
               onClick={handleResolveLogs}
               disabled={isResolving}
-              className="bg-green-600 hover:bg-green-700"
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700"
             >
-              <CheckCircle2 className="w-4 h-4 mr-2" />
-              {isResolving ? "Resolving..." : `Resolve (${selectedLogIds.size})`}
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              {isResolving ? "Resolving…" : `Resolve (${selectedLogIds.size})`}
             </Button>
+          ) : null
+        }
+      >
+        <div className="mb-4 text-xs text-muted-foreground">
+          {isLoadingLogs ? "Loading logs…" : `Showing ${logs.length} of ${totalLogs} logs`}
+          {selectedLogIds.size > 0 && (
+            <span className="ml-3 font-medium text-foreground">{selectedLogIds.size} selected</span>
           )}
         </div>
         <div className="overflow-x-auto">
@@ -662,9 +667,8 @@ export default function LogExplorer() {
             </TableBody>
           </Table>
         </div>
-      </Card>
+      </PanelCard>
 
-      {/* Log Detail Sheet */}
       <Sheet open={!!selectedLog} onOpenChange={() => setSelectedLog(null)}>
         <SheetContent className="overflow-y-auto px-0 w-[95vw] sm:w-[88vw] md:w-[76vw] lg:w-[64vw] xl:w-[56vw] sm:max-w-none">
           <SheetHeader className="px-6 pt-6 pb-4 border-b border-border">
@@ -780,6 +784,6 @@ export default function LogExplorer() {
           )}
         </SheetContent>
       </Sheet>
-    </div>
+    </PageShell>
   );
 }
