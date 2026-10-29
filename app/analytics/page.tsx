@@ -16,8 +16,8 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  ReferenceLine,
 } from "recharts";
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { resolveDateWindow } from "@/lib/date-window";
@@ -75,7 +75,10 @@ export default function Analytics() {
     ...row,
     periodKey: `${row.date}-${index}`,
   }));
-  const resolutionDistData = dashboardData?.resolutionDist || [];
+  const errorTriageData = (dashboardData?.errorTriage || []).map((row, index) => ({
+    ...row,
+    periodKey: row.periodKey || `${row.period}-${index}`,
+  }));
   const aiUsageData = dashboardData?.aiUsage || [];
   const ingestionRateData = dashboardData?.ingestionRate || [];
   const topEndpointsData = (dashboardData?.topEndpoints || []).slice(0, 5);
@@ -161,40 +164,64 @@ export default function Analytics() {
         </Card>
       </div>
 
-      {/* Row 2: Resolution Time & AI Usage */}
+      {/* Row 2: Error triage & AI Usage */}
       <div className="grid grid-cols-2 gap-4">
         <Card className="p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">
-            Error Resolution Time Distribution
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={resolutionDistData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis
-                dataKey="hour"
-                label={{ value: "Hours to Resolve", position: "insideBottom", offset: -5 }}
-                tick={{ fill: "#71717a", fontSize: 12 }}
-              />
-              <YAxis
-                tick={{ fill: "#71717a", fontSize: 12 }}
-                label={{ value: "Number of Issues", angle: -90, position: "insideLeft" }}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <ReferenceLine
-                x={8}
-                stroke="#ef4444"
-                strokeDasharray="5 5"
-                label="SLA Breach (8h)"
-              />
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke="#a855f7"
-                fill="#a855f7"
-                fillOpacity={0.6}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <div className="mb-4 flex items-start justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">
+                ERROR Triage Over Time
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Open vs resolved ERROR logs in the selected window. Resolve rows in{" "}
+                <Link href="/explorer" className="text-primary underline-offset-2 hover:underline">
+                  Explorer
+                </Link>{" "}
+                to update triage state.
+              </p>
+            </div>
+          </div>
+          {errorTriageData.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-16 text-center">
+              No ERROR logs in this range.
+            </p>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={errorTriageData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                <XAxis
+                  dataKey="periodKey"
+                  tickFormatter={(_, index) => errorTriageData[index]?.period ?? ""}
+                  tick={{ fill: "#71717a", fontSize: 11 }}
+                />
+                <YAxis
+                  tick={{ fill: "#71717a", fontSize: 12 }}
+                  allowDecimals={false}
+                  label={{ value: "ERROR count", angle: -90, position: "insideLeft" }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                <Area
+                  type="monotone"
+                  dataKey="open"
+                  stackId="1"
+                  stroke="#ef4444"
+                  fill="#ef4444"
+                  fillOpacity={0.65}
+                  name="Open"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="resolved"
+                  stackId="1"
+                  stroke="#22c55e"
+                  fill="#22c55e"
+                  fillOpacity={0.55}
+                  name="Resolved"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </Card>
 
         <Card className="p-4">

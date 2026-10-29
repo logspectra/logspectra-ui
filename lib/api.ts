@@ -1,10 +1,10 @@
 import type {
   AnalysisResult,
-  AreaPoint,
   BarPoint,
   ComposedPoint,
   DashboardStats,
   DualLinePoint,
+  ErrorTriagePoint,
   HeatmapCell,
   HorizontalBarPoint,
   SeverityMixPoint,
@@ -32,6 +32,7 @@ import {
 import {
   buildHeatmapFromErrorLogs,
   buildTopEndpointsFromLogs,
+  buildErrorTriageFromLogs,
   buildTopErrorsFromLogs,
 } from "@/lib/dashboard-charts";
 import { normalizeIssueWindow } from "@/lib/time-range";
@@ -437,13 +438,12 @@ interface TopEndpointPointDto {
   count?: number;
 }
 interface TopEndpointsResponseDto { points?: TopEndpointPointDto[] }
-interface ErrorResolutionPointDto {
-  bucketHour?: number;
-  hour?: number;
-  issueCount?: number;
-  value?: number;
+interface ErrorTriagePointDto {
+  periodLabel?: string;
+  openCount?: number;
+  resolvedCount?: number;
 }
-interface ErrorResolutionResponseDto { points?: ErrorResolutionPointDto[] }
+interface ErrorTriageResponseDto { points?: ErrorTriagePointDto[] }
 interface LiveLogDto {
   id: string;
   timestamp: string;
@@ -626,11 +626,13 @@ const mapTopEndpoints = (dto: TopEndpointsResponseDto | null | undefined): Horiz
     .slice(0, 10);
 };
 
-const mapResolutionDist = (dto: ErrorResolutionResponseDto | null | undefined): AreaPoint[] => {
+const mapErrorTriage = (dto: ErrorTriageResponseDto | null | undefined): ErrorTriagePoint[] => {
   const points = dto?.points || [];
   return points.map((point, index) => ({
-    hour: point.bucketHour ?? point.hour ?? index,
-    value: point.issueCount ?? point.value ?? 0,
+    period: point.periodLabel || `Bucket ${index + 1}`,
+    periodKey: `${point.periodLabel || "bucket"}-${index}`,
+    open: point.openCount ?? 0,
+    resolved: point.resolvedCount ?? 0,
   }));
 };
 
@@ -936,10 +938,13 @@ export const api = {
       topEndpoints = buildTopEndpointsFromLogs(errorLogsForCharts, 5);
     }
 
-    const resolutionResponse = await apiRequest<ErrorResolutionResponseDto>(
-      `/api/v1/analytics/error-resolution?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    const triageResponse = await apiRequest<ErrorTriageResponseDto>(
+      `/api/v1/analytics/error-triage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
     ).catch(() => null);
-    const resolutionDist = mapResolutionDist(resolutionResponse);
+    let errorTriage = mapErrorTriage(triageResponse);
+    if (errorTriage.length === 0) {
+      errorTriage = buildErrorTriageFromLogs(errorLogsForCharts, window.fromMs, window.toMs);
+    }
 
     let errorTimeline = buildErrorTimelineFromAggregations(aggServices, serviceNames);
     if (errorTimeline.length === 0) {
@@ -971,7 +976,7 @@ export const api = {
       levelVolume,
       topErrors,
       weeklyTrend,
-      resolutionDist,
+      errorTriage,
       aiUsage,
       ingestionRate,
       severityMix,

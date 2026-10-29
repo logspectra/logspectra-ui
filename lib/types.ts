@@ -129,6 +129,14 @@ export interface AreaPoint {
   value: number;
 }
 
+/** Open vs resolved ERROR counts per time bucket (analytics triage chart). */
+export interface ErrorTriagePoint {
+  period: string;
+  periodKey: string;
+  open: number;
+  resolved: number;
+}
+
 export interface DualLinePoint {
   date: string;
   requested: number;

@@ -16,11 +16,11 @@ import type {
   LogEntry,
   PieSlice,
   TimeSeriesPoint,
-  AreaPoint,
   ComposedPoint,
   SeverityMixPoint,
   DualLinePoint,
   StackedAreaPoint,
+  ErrorTriagePoint,
 } from "@/lib/types";
 
 export interface StatSparklines {
@@ -44,7 +44,7 @@ export interface DashboardData {
   levelVolume: BarPoint[];
   topErrors: HorizontalBarPoint[];
   weeklyTrend: ComposedPoint[];
-  resolutionDist: AreaPoint[];
+  errorTriage: ErrorTriagePoint[];
   aiUsage: DualLinePoint[];
   ingestionRate: StackedAreaPoint[];
   severityMix: SeverityMixPoint[];
@@ -315,7 +315,7 @@ export function createEmptyDashboardData(): DashboardData {
     levelVolume: [],
     topErrors: [],
     weeklyTrend: [],
-    resolutionDist: [],
+    errorTriage: [],
     aiUsage: [],
     ingestionRate: [],
     severityMix: [],

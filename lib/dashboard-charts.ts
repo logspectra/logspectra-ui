@@ -1,6 +1,6 @@
 import type { LogEntry } from "@/lib/types";
-import type { HeatmapCell, HorizontalBarPoint } from "@/lib/types";
-import { bucketMsForWindow } from "@/lib/error-timeline";
+import type { ErrorTriagePoint, HeatmapCell, HorizontalBarPoint } from "@/lib/types";
+import { bucketMsForWindow, formatBucketLabel, timelineBucketKey } from "@/lib/error-timeline";
 
 const MAX_HEATMAP_COLUMNS = 48;
 
@@ -54,6 +54,48 @@ export function buildTopErrorsFromLogs(logs: LogEntry[], limit = 5): HorizontalB
     .filter((row) => row.value > 0)
     .sort((a, b) => b.value - a.value)
     .slice(0, limit);
+}
+
+export function buildErrorTriageFromLogs(
+  logs: LogEntry[],
+  fromMs: number,
+  toMs: number
+): ErrorTriagePoint[] {
+  const bucketMs = bucketMsForWindow(fromMs, toMs);
+  const windowFromMs = Math.floor(fromMs / bucketMs) * bucketMs;
+  const windowToMs = Math.max(windowFromMs, Math.ceil(toMs / bucketMs) * bucketMs);
+  const byBucket = new Map<string, { open: number; resolved: number; period: string }>();
+
+  for (const log of logs) {
+    if (log.level !== "ERROR") continue;
+    const ts = log.timestamp.getTime();
+    if (ts < fromMs || ts > toMs) continue;
+    const sortKey = timelineBucketKey(log.timestamp, bucketMs);
+    const row = byBucket.get(sortKey) ?? {
+      open: 0,
+      resolved: 0,
+      period: formatBucketLabel(sortKey, bucketMs),
+    };
+    if (log.resolved) {
+      row.resolved += 1;
+    } else {
+      row.open += 1;
+    }
+    byBucket.set(sortKey, row);
+  }
+
+  const points: ErrorTriagePoint[] = [];
+  for (let t = windowFromMs; t <= windowToMs; t += bucketMs) {
+    const key = timelineBucketKey(new Date(t), bucketMs);
+    const row = byBucket.get(key);
+    points.push({
+      period: row?.period ?? formatBucketLabel(key, bucketMs),
+      periodKey: key,
+      open: row?.open ?? 0,
+      resolved: row?.resolved ?? 0,
+    });
+  }
+  return points;
 }
 
 export function buildHeatmapFromErrorLogs(
