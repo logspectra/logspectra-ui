@@ -283,7 +283,7 @@ export default function Analytics() {
           </h3>
           {topEndpointsData.length === 0 ? (
             <div className="h-[300px] flex items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-4 text-center text-sm text-muted-foreground">
-              Please send 'endpoint' key in logs to enable this section.
+              No ERROR logs with an endpoint in this range. HTTP traffic gets endpoint from LogSpectra starter MDC; scheduled jobs should use LogSpectraMdc.runWithRequestContext.
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={300}>

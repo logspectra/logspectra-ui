@@ -25,6 +25,7 @@ export interface LogEntry {
   service: string;
   traceId: string;
   message: string;
+  endpoint?: string;
   stackTrace?: string;
   resolved?: boolean;
 }

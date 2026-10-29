@@ -31,6 +31,7 @@ import {
 } from "@/lib/error-timeline";
 import {
   buildHeatmapFromErrorLogs,
+  buildTopEndpointsFromLogs,
   buildTopErrorsFromLogs,
 } from "@/lib/dashboard-charts";
 import { normalizeIssueWindow } from "@/lib/time-range";
@@ -396,7 +397,7 @@ interface PagedResponse<T> {
   totalElements: number;
 }
 
-interface LogDto { id: string; timestamp: string; level: "DEBUG" | "INFO" | "WARN" | "ERROR"; service: string; traceId: string; message: string; exception?: string, stackTrace?: string; resolved?: boolean; }
+interface LogDto { id: string; timestamp: string; level: "DEBUG" | "INFO" | "WARN" | "ERROR"; service: string; traceId: string; message: string; endpoint?: string; exception?: string, stackTrace?: string; resolved?: boolean; }
 interface IssueDto { id: string; severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; title?: string; service: string; errorType?: string; exceptionType?: string; occurrences?: number; occurrenceCount?: number; firstSeen: string; lastSeen: string; affectedServices?: string[]; trend?: number[]; endpoint?: string; traceId?: string; groupByKey?: string; }
 interface AggregationDto { services: Array<{ service: string; totalErrors: number; exceptions: Array<{ exception: string; count: number; timeline: Array<{ timestamp: string; count: number }> }> }> }
 interface DashboardStatsDto { totalLogs: number; totalLogsChangePercent: number; errorCount: number; errorChangePercent: number; affectedServices?: { count: number; services: string[] }; aiAnalysesRun: number; aiCached: number; aiSaved: number, totalServices: string[]; serviceCount: number }
@@ -689,6 +690,7 @@ export const api = {
         service: l.service,
         traceId: l.traceId,
         message: l.message,
+        endpoint: l.endpoint,
         stackTrace: l.stackTrace || l.exception || "",
         resolved: l.resolved ?? false,
       })),
@@ -716,6 +718,7 @@ export const api = {
       service: l.service,
       traceId: l.traceId,
       message: l.message,
+      endpoint: l.endpoint,
       stackTrace: l.stackTrace || l.exception || "",
       resolved: l.resolved ?? false,
     }));
@@ -928,7 +931,10 @@ export const api = {
     const topEndpointsResponse = await apiRequest<TopEndpointsResponseDto>(
       `/api/v1/analytics/top-endpoints?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
     ).catch(() => null);
-    const topEndpoints = mapTopEndpoints(topEndpointsResponse);
+    let topEndpoints = mapTopEndpoints(topEndpointsResponse);
+    if (topEndpoints.length === 0) {
+      topEndpoints = buildTopEndpointsFromLogs(errorLogsForCharts, 5);
+    }
 
     const resolutionResponse = await apiRequest<ErrorResolutionResponseDto>(
       `/api/v1/analytics/error-resolution?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`

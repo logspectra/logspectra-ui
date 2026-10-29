@@ -21,6 +21,27 @@ export function errorLabelFromLog(log: LogEntry): string {
   return msg.length > 120 ? `${msg.slice(0, 117)}…` : msg || "Unknown error";
 }
 
+export function buildTopEndpointsFromLogs(logs: LogEntry[], limit = 5): HorizontalBarPoint[] {
+  const counts = new Map<string, number>();
+  for (const log of logs) {
+    if (log.level !== "ERROR") continue;
+    const endpoint = log.endpoint?.trim() || extractRouteFromMessage(log.message);
+    if (!endpoint) continue;
+    counts.set(endpoint, (counts.get(endpoint) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([name, value]) => ({ name, value }))
+    .filter((row) => row.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit);
+}
+
+function extractRouteFromMessage(message: string | undefined): string | undefined {
+  if (!message) return undefined;
+  const match = message.match(/(?:^|\s)route=([^\s]+)/);
+  return match?.[1]?.trim() || undefined;
+}
+
 export function buildTopErrorsFromLogs(logs: LogEntry[], limit = 5): HorizontalBarPoint[] {
   const counts = new Map<string, number>();
   for (const log of logs) {
