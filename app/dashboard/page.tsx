@@ -9,7 +9,7 @@ import {
   type DashboardData,
 } from "@/lib/dashboard-data";
 import { isWithinLiveDateWindow, resolveDateWindow } from "@/lib/date-window";
-import { resolveTimelineServiceKeys } from "@/lib/error-timeline";
+import { formatBucketLabel, resolveTimelineServiceKeys } from "@/lib/error-timeline";
 import { useLiveLogStream } from "@/hooks/use-live-log-stream";
 import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import { useSmoothNumber } from "@/hooks/use-smooth-number";
@@ -128,6 +128,8 @@ export default function Dashboard() {
   const topErrorsData = dashboardData?.topErrors || [];
   const issuesData = dashboardData?.issues || [];
   const heatmapData = dashboardData?.heatmap || [];
+  const heatmapMeta = dashboardData?.heatmapMeta;
+  const heatmapBucketCount = heatmapMeta?.bucketCount ?? 24;
   const statSparklines = dashboardData?.statSparklines;
 
   const smoothTotalLogs = useSmoothNumber(stats.totalLogs);
@@ -174,10 +176,18 @@ export default function Dashboard() {
   };
 
   const heatmapServices = (
-    stats.totalServices.length > 0
-      ? stats.totalServices
-      : Array.from(new Set(heatmapData.map((cell) => cell.service)))
+    heatmapData.length > 0
+      ? Array.from(new Set(heatmapData.map((cell) => cell.service)))
+      : stats.totalServices.length > 0
+        ? stats.totalServices
+        : []
   ).filter((service) => service && service.length > 0);
+
+  const heatmapBucketLabel = (bucketIndex: number): string => {
+    if (!heatmapMeta) return `Bucket ${bucketIndex}`;
+    const ms = heatmapMeta.windowFromMs + bucketIndex * heatmapMeta.bucketMs;
+    return formatBucketLabel(new Date(ms).toISOString(), heatmapMeta.bucketMs);
+  };
 
   const heatmapValues = heatmapData.map((cell) => cell.value);
   const maxHeatmapValue = heatmapValues.length > 0 ? Math.max(...heatmapValues) : 0;
@@ -437,20 +447,25 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-4">
         {/* Error Heatmap */}
         <Card className="bg-card border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Error Heatmap by Service × Hour</h3>
-          <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-foreground mb-4">
+            Error heatmap by service × time
+          </h3>
+          {heatmapServices.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">No errors in this time range.</p>
+          ) : (
+          <div className="space-y-2 overflow-x-auto">
             {heatmapServices.map((service) => (
-              <div key={service} className="flex items-center gap-2">
+              <div key={service} className="flex items-center gap-2 min-w-max">
                 <div className="w-32 text-xs text-muted-foreground truncate">{service}</div>
                 <div className="flex gap-0.5">
-                  {Array.from({ length: 24 }, (_, hour) => {
-                    const value = heatmapLookup.get(`${service}-${hour}`) ?? 0;
+                  {Array.from({ length: heatmapBucketCount }, (_, bucket) => {
+                    const value = heatmapLookup.get(`${service}-${bucket}`) ?? 0;
                     const bgColor = heatmapColorClass(value);
                     return (
                       <div
-                        key={hour}
-                        className={`w-3 h-3 ${bgColor} rounded-sm`}
-                        title={`Hour ${hour}: ${value} errors`}
+                        key={bucket}
+                        className={`w-3 h-3 ${bgColor} rounded-sm shrink-0`}
+                        title={`${heatmapBucketLabel(bucket)}: ${value} error(s)`}
                       />
                     );
                   })}
@@ -469,29 +484,48 @@ export default function Dashboard() {
               <span>High</span>
             </div>
           </div>
+          )}
         </Card>
 
         {/* Top Error Types */}
         <Card className="bg-card border-border p-4">
           <h3 className="text-sm font-semibold text-foreground mb-4">Top 5 Error Types</h3>
+          {topErrorsData.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">No error types in this time range.</p>
+          ) : (
           <ResponsiveContainer width="100%" height={300}>
             <BarChart
               data={topErrorsData}
               layout="vertical"
-              margin={{ top: 5, right: 30, left: 200, bottom: 5 }}
+              margin={{ top: 5, right: 30, left: 8, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis type="number" tick={{ fill: "#6b7280", fontSize: 12 }} />
+              <XAxis type="number" tick={{ fill: "#6b7280", fontSize: 12 }} allowDecimals={false} />
               <YAxis
                 dataKey="name"
                 type="category"
                 tick={{ fill: "#6b7280", fontSize: 11 }}
-                width={195}
+                width={180}
+                tickFormatter={(name: string) =>
+                  name.length > 28 ? `${name.slice(0, 25)}…` : name
+                }
               />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const row = payload[0]?.payload as { name?: string; value?: number };
+                  return (
+                    <div className="bg-card border border-border rounded p-2 text-xs max-w-sm">
+                      <p className="font-medium text-foreground break-words">{row?.name}</p>
+                      <p className="text-muted-foreground">{row?.value ?? 0} occurrence(s)</p>
+                    </div>
+                  );
+                }}
+              />
               <Bar dataKey="value" fill="#dc2626" radius={[0, 8, 8, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          )}
         </Card>
       </div>
 

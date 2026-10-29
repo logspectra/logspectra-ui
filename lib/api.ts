@@ -29,6 +29,10 @@ import {
   buildErrorTimelineFromLogs,
   densifyErrorTimeline,
 } from "@/lib/error-timeline";
+import {
+  buildHeatmapFromErrorLogs,
+  buildTopErrorsFromLogs,
+} from "@/lib/dashboard-charts";
 import { normalizeIssueWindow } from "@/lib/time-range";
 
 export { resolveDateWindow, isWithinDateWindow } from "@/lib/date-window";
@@ -847,31 +851,42 @@ export const api = {
 
     const aggServices = agg?.services ?? [];
     const distribution: PieSlice[] = aggServices.map((s) => ({ name: s.service, value: s.totalErrors, color: svcColor(s.service) }));
-    const topErrors: HorizontalBarPoint[] = aggServices
+
+    const errorLogsForCharts =
+      errorLogsPage.content && errorLogsPage.content.length > 0
+        ? errorLogsPage.content
+        : logs.filter((l) => l.level === "ERROR");
+
+    let topErrors: HorizontalBarPoint[] = aggServices
       .flatMap((s) => (s.exceptions ?? []).map((e) => ({ name: e.exception || "Unknown", value: e.count })))
+      .filter((row) => row.value > 0)
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-    const serviceNames = Array.from(
-      new Set([...(statsDto.totalServices || []), ...aggServices.map((s) => s.service)])
-    );
-
-    const heatmapByServiceHour: Record<string, Record<number, number>> = {};
-    for (const svc of aggServices) {
-      for (const ex of svc.exceptions ?? []) {
-        for (const t of ex.timeline ?? []) {
-          if (!t?.timestamp) continue;
-          const hour = Number.parseInt(t.timestamp.slice(11, 13), 10);
-          if (!Number.isNaN(hour) && hour >= 0 && hour < 24) {
-            if (!heatmapByServiceHour[svc.service]) {
-              heatmapByServiceHour[svc.service] = {};
-            }
-            const currentHourCount = heatmapByServiceHour[svc.service][hour] ?? 0;
-            heatmapByServiceHour[svc.service][hour] = currentHourCount + (t.count ?? 0);
-          }
-        }
-      }
+    if (topErrors.length === 0) {
+      topErrors = buildTopErrorsFromLogs(errorLogsForCharts, 5);
     }
+
+    const serviceNames = Array.from(
+      new Set([
+        ...(statsDto.totalServices || []),
+        ...aggServices.map((s) => s.service),
+        ...errorLogsForCharts.map((l) => l.service),
+      ])
+    ).filter(Boolean);
+
+    const heatmapBuilt = buildHeatmapFromErrorLogs(
+      errorLogsForCharts,
+      serviceNames,
+      window.fromMs,
+      window.toMs
+    );
+    const heatmap = heatmapBuilt.cells;
+    const heatmapMeta = {
+      bucketMs: heatmapBuilt.bucketMs,
+      bucketCount: heatmapBuilt.bucketCount,
+      windowFromMs: heatmapBuilt.windowFromMs,
+    };
 
     const affectedServices = statsDto.affectedServices || { count: 0, services: [] };
 
@@ -889,13 +904,6 @@ export const api = {
     };
 
     const levelVolume: BarPoint[] = ["DEBUG", "INFO", "WARN", "ERROR"].map((level) => ({ name: level, value: logs.filter((l) => l.level === level).length }));
-    const heatmap: HeatmapCell[] = serviceNames.flatMap((service) =>
-      Array.from({ length: 24 }, (_, hour) => ({
-        service,
-        hour,
-        value: heatmapByServiceHour[service]?.[hour] ?? 0,
-      }))
-    );
 
     const weeklyTrendResponse = await apiRequest<WeeklyTrendResponseDto>(
       `/api/v1/analytics/weekly-trend?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
@@ -963,6 +971,7 @@ export const api = {
       severityMix,
       topEndpoints,
       heatmap,
+      heatmapMeta,
       liveErrors: Array.from({ length: 60 }, (_, i) => ({ timestamp: i, errors: 0, throughput: 0 })) as LivePoint[],
     };
   },

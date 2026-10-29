@@ -1,4 +1,10 @@
 import { formatBucketLabel, timelineBucketKey } from "@/lib/error-timeline";
+import {
+  buildTopErrorsFromLogs,
+  errorLabelFromLog,
+  heatmapBucketIndexForLog,
+  type HeatmapBuildResult,
+} from "@/lib/dashboard-charts";
 import { serviceColor } from "@/lib/service-colors";
 import type {
   BarPoint,
@@ -44,6 +50,12 @@ export interface DashboardData {
   severityMix: SeverityMixPoint[];
   topEndpoints: HorizontalBarPoint[];
   heatmap: HeatmapCell[];
+  /** Window-aligned heatmap columns (see buildHeatmapFromErrorLogs). */
+  heatmapMeta?: {
+    bucketMs: number;
+    bucketCount: number;
+    windowFromMs: number;
+  };
   liveErrors: LivePoint[];
   /** Throttle rolling sparkline points during live ingest (ms). */
   lastSparklinePushAt?: number;
@@ -127,8 +139,6 @@ const withUpdatedSparklines = (
     lastSparklinePushAt: rollWindow ? now : lastPush,
   };
 };
-
-const hourUtc = (date: Date): number => date.getUTCHours();
 
 const bumpLevelVolume = (rows: BarPoint[], level: LogEntry["level"]): BarPoint[] => {
   const found = rows.some((row) => row.name === level);
@@ -257,8 +267,12 @@ export function applyLiveLogToDashboard(data: DashboardData, log: LogEntry): Das
   };
 
   const key = timelineBucketKey(log.timestamp, 1000);
-  const hour = hourUtc(log.timestamp);
-  const errorLabel = log.stackTrace?.split("\n")[0]?.trim() || log.message.slice(0, 80);
+  const errorLabel = errorLabelFromLog(log);
+
+  const heatmapBucket =
+    data.heatmapMeta != null
+      ? heatmapBucketIndexForLog(log.timestamp, data.heatmapMeta as HeatmapBuildResult)
+      : log.timestamp.getUTCHours();
 
   const spark = withUpdatedSparklines(data, stats);
 
@@ -271,7 +285,7 @@ export function applyLiveLogToDashboard(data: DashboardData, log: LogEntry): Das
     distribution: bumpDistribution(data.distribution, log.service),
     topErrors: bumpTopErrors(data.topErrors, errorLabel),
     errorTimeline: bumpErrorTimeline(data.errorTimeline, log.service, stats.totalServices, key),
-    heatmap: bumpHeatmap(data.heatmap, log.service, hour),
+    heatmap: bumpHeatmap(data.heatmap, log.service, heatmapBucket),
   };
 }
 
