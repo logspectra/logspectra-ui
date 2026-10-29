@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { AnalysisStreamEvent } from "@/lib/api";
 import type { AnalysisResult } from "@/lib/types";
+import { ANALYSIS_CONFIDENCE_HINT, formatAnalysisConfidencePercent } from "@/lib/confidence";
 
 const severityBadgeClasses: Record<string, string> = {
   CRITICAL: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-100",
@@ -316,8 +317,9 @@ export function AIAnalysisPanel({
             <div>
               <p className="text-xs text-muted-foreground">Confidence</p>
               <p className="text-sm font-semibold text-foreground">
-                {Math.round(result.confidence <= 1 ? result.confidence * 100 : result.confidence)}%
+                {formatAnalysisConfidencePercent(result.confidence)}%
               </p>
+              <p className="mt-0.5 max-w-xs text-[11px] leading-snug text-muted-foreground">{ANALYSIS_CONFIDENCE_HINT}</p>
             </div>
             <div className="h-8 w-px bg-border" />
             <div>
