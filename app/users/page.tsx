@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, ManagedUser } from "@/lib/api";
+import { PageErrorBanner } from "@/components/page-error-banner";
 
 export default function UsersPage() {
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -36,15 +37,23 @@ export default function UsersPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.createUser(username, password, role);
-    setUsername("");
-    setPassword("");
-    await loadUsers();
+    try {
+      await api.createUser(username, password, role);
+      setUsername("");
+      setPassword("");
+      await loadUsers();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create user");
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await api.deleteUser(id);
-    await loadUsers();
+    try {
+      await api.deleteUser(id);
+      await loadUsers();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete user");
+    }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -74,6 +83,7 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6 max-w-4xl">
+      <PageErrorBanner message={error} />
       <Card className="p-6">
         <h2 className="text-lg font-semibold text-foreground mb-4">Create User</h2>
         <form className="grid grid-cols-4 gap-3" onSubmit={handleCreate}>
@@ -121,7 +131,6 @@ export default function UsersPage() {
 
       <Card className="p-6">
         <h2 className="text-lg font-semibold text-foreground mb-4">Users</h2>
-        {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
         <div className="space-y-2">
           {users.map((u) => (
             <div key={u.id} className="flex items-center justify-between border border-border rounded p-3">

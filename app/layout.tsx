@@ -1,10 +1,12 @@
 import type { Metadata } from 'next'
 import Script from 'next/script'
+import { Suspense } from 'react'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/lib/theme-context'
 import { ProjectProvider } from '@/lib/project-context'
 import { LayoutContent } from '@/components/layout-content'
+import { AppUrlStateSync } from '@/components/app-url-state-sync'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -44,6 +46,9 @@ export default function RootLayout({
         <Script src="/env-config.js" strategy="beforeInteractive" />
         <ThemeProvider>
           <ProjectProvider>
+            <Suspense fallback={null}>
+              <AppUrlStateSync />
+            </Suspense>
             <LayoutContent>{children}</LayoutContent>
           </ProjectProvider>
         </ThemeProvider>

@@ -21,10 +21,13 @@ import {
 import { Card } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { resolveDateWindow } from "@/lib/date-window";
+import { PageErrorBanner } from "@/components/page-error-banner";
 
 export default function Analytics() {
   const { selectedProject, timeRange, customDateRange } = useProject();
   const [dashboardData, setDashboardData] = useState<Awaited<ReturnType<typeof api.getDashboardData>> | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const dateWindow = resolveDateWindow(timeRange, customDateRange);
 
   useEffect(() => {
     if (!selectedProject?.id) {
@@ -32,18 +35,23 @@ export default function Analytics() {
       return;
     }
 
-    if (!resolveDateWindow(timeRange, customDateRange)) {
+    if (!dateWindow) {
       setDashboardData(null);
+      setLoadError("");
       return;
     }
 
     let cancelled = false;
     const load = async () => {
+      setLoadError("");
       try {
         const data = await api.getDashboardData(timeRange, customDateRange);
         if (!cancelled) setDashboardData(data);
-      } catch {
-        if (!cancelled) setDashboardData(null);
+      } catch (error) {
+        if (!cancelled) {
+          setDashboardData(null);
+          setLoadError(error instanceof Error ? error.message : "Failed to load analytics");
+        }
       }
     };
 
@@ -101,13 +109,16 @@ export default function Analytics() {
 
   return (
     <div className="space-y-6">
+      <PageErrorBanner message={loadError} />
+      {!dateWindow && (
+        <p className="text-sm text-muted-foreground">Select a valid time range to load analytics.</p>
+      )}
       {/* Row 1: Error Trends */}
       <div>
         <h2 className="text-lg font-semibold text-foreground mb-4">Error Trends</h2>
         <Card className="p-4">
           <ResponsiveContainer width="100%" height={350}>
             <ComposedChart data={weeklyTrendChartData}>
-              {console.log("Weekly Trend Chart Data:", weeklyTrendChartData)}
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
               <XAxis
                 dataKey="periodKey"

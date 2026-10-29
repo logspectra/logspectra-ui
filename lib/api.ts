@@ -129,12 +129,50 @@ const createApiHeaders = (options: ApiOptions = {}): Headers => {
   return headers;
 };
 
+const parseAnalyzedAt = (value?: string): Date => {
+  if (!value) return new Date();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+};
+
+/** When the backend streams raw JSON as tokens without a result event. */
+export function parseAnalysisFromStreamText(text: string, fallbackTraceId?: string): AnalysisResult | null {
+  const trimmed = text.trim();
+  if (!trimmed.includes("errorSummary")) return null;
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(trimmed.slice(start, end + 1)) as Partial<AnalysisDto>;
+    if (!parsed.errorSummary && !parsed.rootCause) return null;
+    return mapAnalysisResult(
+      {
+        severity: parsed.severity ?? "MEDIUM",
+        confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
+        service: parsed.service,
+        errorSummary: parsed.errorSummary ?? "",
+        rootCause: parsed.rootCause ?? "",
+        affectedServices: parsed.affectedServices ?? [],
+        suggestedFixes: parsed.suggestedFixes ?? [],
+        relatedTraceIds: parsed.relatedTraceIds ?? [],
+        fingerprint: parsed.fingerprint,
+        analyzedAt: parsed.analyzedAt ?? new Date().toISOString(),
+        cached: parsed.cached,
+        cachedResult: parsed.cachedResult,
+      },
+      fallbackTraceId
+    );
+  } catch {
+    return null;
+  }
+}
+
 const mapAnalysisResult = (r: AnalysisDto, fallbackTraceId?: string): AnalysisResult => ({
-  severity: r.severity,
-  confidence: r.confidence,
+  severity: r.severity ?? "MEDIUM",
+  confidence: typeof r.confidence === "number" && !Number.isNaN(r.confidence) ? r.confidence : 0,
   service: r.service || r.affectedServices?.[0] || "unknown",
-  errorSummary: r.errorSummary,
-  rootCause: r.rootCause,
+  errorSummary: r.errorSummary ?? "",
+  rootCause: r.rootCause ?? "",
   affectedServices: r.affectedServices || [],
   suggestedFixes: (r.suggestedFixes || []).map((f) => {
     const patchPreview =
@@ -142,8 +180,8 @@ const mapAnalysisResult = (r: AnalysisDto, fallbackTraceId?: string): AnalysisRe
         ? `<<<<<<< SEARCH\n${f.search}\n=======\n${f.replace}\n>>>>>>> REPLACE`
         : f.newContent || f.fix || f.description || "";
     return {
-      priority: f.priority,
-      effort: f.effort,
+      priority: f.priority ?? "MEDIUM",
+      effort: f.effort ?? "MEDIUM",
       description: f.fix || f.description || "Suggested change",
       code: patchPreview,
       filePath: f.filePath,
@@ -154,7 +192,7 @@ const mapAnalysisResult = (r: AnalysisDto, fallbackTraceId?: string): AnalysisRe
   }),
   relatedTraceIds: r.relatedTraceIds || (fallbackTraceId ? [fallbackTraceId] : []),
   fingerprint: r.fingerprint,
-  analyzedAt: new Date(r.analyzedAt),
+  analyzedAt: parseAnalyzedAt(r.analyzedAt),
   cached: r.cached ?? r.cachedResult ?? false,
   remediationPrUrl: r.remediationPrUrl,
   remediationBranch: r.remediationBranch,
@@ -207,9 +245,6 @@ async function streamAnalyzeLog(
   headers.set("Accept", "text/event-stream");
 
   const body: Record<string, unknown> = { traceId, provider };
-  if (options.createRemediationPr) {
-    body.createRemediationPr = true;
-  }
 
   const response = await fetch(`${getApiBaseUrl()}/api/v1/logs/analyze`, {
     method: "POST",
@@ -241,6 +276,7 @@ async function streamAnalyzeLog(
   const decoder = new TextDecoder();
   let buffer = "";
   let finalResult: AnalysisResult | null = null;
+  let streamedTokens = "";
 
   const processBlock = (block: string) => {
     if (!block.trim()) return;
@@ -274,6 +310,7 @@ async function streamAnalyzeLog(
       } else if (normalized?.type === "complete") {
         options.onComplete?.(normalized);
       } else if (normalized?.type === "token") {
+        streamedTokens += normalized.message;
         options.onProgress?.(normalized);
       } else if (normalized?.type === "error") {
         options.onProgress?.(normalized);
@@ -303,6 +340,14 @@ async function streamAnalyzeLog(
     }
   } finally {
     reader.releaseLock();
+  }
+
+  if (!finalResult && streamedTokens.trim()) {
+    const parsed = parseAnalysisFromStreamText(streamedTokens, traceId);
+    if (parsed) {
+      finalResult = parsed;
+      options.onResult?.(parsed);
+    }
   }
 
   return finalResult;

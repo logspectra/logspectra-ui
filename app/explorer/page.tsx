@@ -45,6 +45,7 @@ import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import type { AnalysisStreamEvent } from "@/lib/api";
 import type { AnalysisResult, LogEntry } from "@/lib/types";
 import { Eye, Bug, Copy, Check, CheckCircle2 } from "lucide-react";
+import { PageErrorBanner } from "@/components/page-error-banner";
 
 export default function LogExplorer() {
   const { selectedProject, timeRange, customDateRange } = useProject();
@@ -55,6 +56,7 @@ export default function LogExplorer() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [totalLogs, setTotalLogs] = useState(0);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [searchLoadError, setSearchLoadError] = useState("");
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -68,6 +70,7 @@ export default function LogExplorer() {
   const [showChart, setShowChart] = useState(false);
   const [selectedLogIds, setSelectedLogIds] = useState<Set<string>>(new Set());
   const [isResolving, setIsResolving] = useState(false);
+  const [resolveError, setResolveError] = useState("");
   const analysisAbortRef = useRef<AbortController | null>(null);
 
   const LevelColors: Record<string, string> = {
@@ -93,6 +96,7 @@ export default function LogExplorer() {
     let cancelled = false;
     const timeout = setTimeout(async () => {
       setIsLoadingLogs(true);
+      setSearchLoadError("");
       try {
         const result = await api.searchLogs({
           from: window.from,
@@ -114,7 +118,7 @@ export default function LogExplorer() {
         }
       } catch (error) {
         if (cancelled) return;
-        console.error("Failed to search logs", error);
+        setSearchLoadError(error instanceof Error ? error.message : "Failed to search logs");
         setLogs([]);
         setTotalLogs(0);
       } finally {
@@ -348,10 +352,15 @@ export default function LogExplorer() {
         setIsAnalyzing(false);
       }
     } catch (error) {
-      if (!controller.signal.aborted) {
-        console.error("❌ Failed to analyze log:", error);
-        setAnalysisError(error instanceof Error ? error.message : "Debug session failed");
+      if (controller.signal.aborted) {
+        return;
       }
+      const message = error instanceof Error ? error.message : "Debug session failed";
+      if (message.toLowerCase().includes("abort")) {
+        return;
+      }
+      console.error("Failed to analyze log:", error);
+      setAnalysisError(message);
     } finally {
       if (!controller.signal.aborted) {
         setIsAnalyzing(false);
@@ -365,8 +374,14 @@ export default function LogExplorer() {
   const handleApplyFix = async () => {
     const fingerprint = analysisResult?.fingerprint;
     const traceId = selectedLog?.traceId;
-    if (!fingerprint || !traceId) {
-      setFixError("Run Debug first to generate suggested fixes.");
+    if (!traceId) {
+      setFixError("Select a log with a trace ID.");
+      return;
+    }
+    if (!fingerprint) {
+      setFixError(
+        "Missing issue fingerprint — re-run Debug. If analysis completed with a warning, fix the backend issue registry first."
+      );
       return;
     }
 
@@ -416,19 +431,15 @@ export default function LogExplorer() {
     if (selectedLogIds.size === 0) return;
 
     setIsResolving(true);
+    setResolveError("");
     try {
       const logIds = Array.from(selectedLogIds);
-      console.log("[v0] Resolving logs:", logIds);
-      
       await api.resolveLogs(logIds);
-      
-      console.log("[v0] Logs resolved successfully");
-      // Remove resolved logs from the list
       setLogs((prevLogs) => prevLogs.filter((log) => !selectedLogIds.has(log.id)));
       setSelectedLogIds(new Set());
-      setTotalLogs((prev) => Math.max(0, prev - selectedLogIds.size));
+      setTotalLogs((prev) => Math.max(0, prev - logIds.length));
     } catch (error) {
-      console.error("[v0] Failed to resolve logs:", error);
+      setResolveError(error instanceof Error ? error.message : "Failed to resolve logs");
     } finally {
       setIsResolving(false);
     }
@@ -540,6 +551,8 @@ export default function LogExplorer() {
           </ResponsiveContainer>
         </Card>
       )}
+
+      <PageErrorBanner message={searchLoadError || resolveError} />
 
       {/* Logs Table */}
       <Card className="p-4">

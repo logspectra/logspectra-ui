@@ -1,24 +1,28 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useProject } from '@/lib/project-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, user } = useProject();
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('password123');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Redirect if already logged in
-  if (user) {
-    router.push('/');
-    return null;
-  }
+  useEffect(() => {
+    if (user) {
+      const next = searchParams.get('next');
+      const target =
+        next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+      router.replace(target);
+    }
+  }, [user, router, searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,13 +32,20 @@ export default function LoginPage() {
     const success = await login(username, password);
     
     if (success) {
-      router.push('/');
+      const next = searchParams.get('next');
+      const target =
+        next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+      router.push(target);
     } else {
       setError('Invalid username or password');
     }
     
     setIsLoading(false);
   };
+
+  if (user) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">

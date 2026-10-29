@@ -20,6 +20,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Copy, Check } from "lucide-react";
+import { PageErrorBanner } from "@/components/page-error-banner";
 
 const formatTimeTick = (timestamp: number | string) => {
   const numeric = typeof timestamp === "number" ? timestamp : Number(timestamp);
@@ -36,6 +37,7 @@ export default function LiveStream() {
   const [liveData, setLiveData] = useState<LivePoint[]>([]);
   const [liveLogEntries, setLiveLogEntries] = useState<LogEntry[]>([]);
   const [copiedTraceId, setCopiedTraceId] = useState<string | null>(null);
+  const [historyLoadError, setHistoryLoadError] = useState("");
 
   const buildMetricsFromLogs = (logs: LogEntry[]): LivePoint[] => {
     const buckets = new Map<number, { errors: number; throughput: number }>();
@@ -111,6 +113,7 @@ export default function LiveStream() {
     let cancelled = false;
 
     const loadHistory = async () => {
+      setHistoryLoadError("");
       try {
         const resolved = resolveDateWindow(timeRange, customDateRange);
         if (!resolved) {
@@ -134,8 +137,9 @@ export default function LiveStream() {
         if (cancelled) return;
         setLiveLogEntries(latestLogs);
         setLiveData(buildMetricsFromLogs(latestLogs));
-      } catch {
+      } catch (error) {
         if (!cancelled) {
+          setHistoryLoadError(error instanceof Error ? error.message : "Failed to load recent logs");
           setLiveLogEntries([]);
           setLiveData([]);
         }
@@ -186,6 +190,7 @@ export default function LiveStream() {
 
   return (
     <div className="space-y-6">
+      <PageErrorBanner message={historyLoadError} />
       <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
         <span
           className={`h-2 w-2 rounded-full ${

@@ -104,12 +104,13 @@ export function AIAnalysisPanel({
 
   if (!result && !isStreaming && events.length === 0 && !streamError) return null;
 
-  const phase = streamError
-    ? "failed"
-    : isStreaming
-      ? "running"
-      : result
-        ? "done"
+  const partialSuccess = Boolean(result && streamError);
+  const phase = result
+    ? "done"
+    : streamError
+      ? "failed"
+      : isStreaming
+        ? "running"
         : "idle";
 
   const sessionSettled = phase === "done" || phase === "failed";
@@ -155,7 +156,15 @@ export function AIAnalysisPanel({
                       : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-100"
                 }
               >
-                {phase === "running" ? "In progress" : phase === "done" ? "Complete" : phase === "failed" ? "Failed" : "Ready"}
+                {phase === "running"
+                  ? "In progress"
+                  : phase === "done"
+                    ? partialSuccess
+                      ? "Complete (warning)"
+                      : "Complete"
+                    : phase === "failed"
+                      ? "Failed"
+                      : "Ready"}
               </Badge>
               {providerLabel && (
                 <Badge variant="outline" className="font-normal text-muted-foreground">
@@ -263,8 +272,16 @@ export function AIAnalysisPanel({
         )}
 
         {streamError && (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
-            {streamError}
+          <div
+            className={
+              partialSuccess
+                ? "mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100"
+                : "mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200"
+            }
+          >
+            {partialSuccess
+              ? `Analysis finished, but saving to the issue registry failed: ${streamError}`
+              : streamError}
           </div>
         )}
       </div>
@@ -298,7 +315,9 @@ export function AIAnalysisPanel({
             <Badge className={severityBadgeClasses[result.severity] ?? severityBadgeClasses.LOW}>{result.severity}</Badge>
             <div>
               <p className="text-xs text-muted-foreground">Confidence</p>
-              <p className="text-sm font-semibold text-foreground">{Math.round(result.confidence)}%</p>
+              <p className="text-sm font-semibold text-foreground">
+                {Math.round(result.confidence <= 1 ? result.confidence * 100 : result.confidence)}%
+              </p>
             </div>
             <div className="h-8 w-px bg-border" />
             <div>
@@ -327,8 +346,18 @@ export function AIAnalysisPanel({
                 <Button
                   size="sm"
                   className="bg-emerald-600 hover:bg-emerald-700"
-                  disabled={isApplyingFix || isStreaming || !!result.remediationPrUrl}
+                  disabled={
+                    isApplyingFix
+                    || isStreaming
+                    || !!result.remediationPrUrl
+                    || !result.fingerprint
+                  }
                   onClick={onApplyFix}
+                  title={
+                    !result.fingerprint
+                      ? "Re-run Debug after the backend stores the issue fingerprint (Apply fix needs it)."
+                      : undefined
+                  }
                 >
                   {isApplyingFix ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

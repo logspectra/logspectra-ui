@@ -5,6 +5,7 @@ import { User, Project } from './types';
 import { authUtils } from './auth';
 import type { CustomDateRange } from './api';
 import type { TimeRange } from './time-range';
+import { parseAppUrlState } from './url-app-state';
 
 export type { TimeRange } from './time-range';
 
@@ -45,10 +46,25 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         const userProjects = await authUtils.getUserProjects(currentUser.id);
         setProjects(userProjects);
 
-        const selectedProjectId = authUtils.getSelectedProjectId();
+        const urlProjectId =
+          typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('projectId')?.trim() || null
+            : null;
+        const selectedProjectId = urlProjectId || authUtils.getSelectedProjectId();
         const project = selectedProjectId
           ? userProjects.find((p) => p.id === selectedProjectId)
           : userProjects[0];
+
+        const urlState =
+          typeof window !== 'undefined'
+            ? parseAppUrlState(new URLSearchParams(window.location.search))
+            : null;
+        if (urlState?.timeRange === 'custom' && urlState.customDateRange.from && urlState.customDateRange.to) {
+          setCustomDateRangeState(urlState.customDateRange);
+          setTimeRangeState('custom');
+        } else if (urlState?.timeRange) {
+          setTimeRangeState(urlState.timeRange);
+        }
 
         if (project) {
           authUtils.setSelectedProjectId(project.id);

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Zap, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProject } from "@/lib/project-context";
@@ -9,7 +9,7 @@ import { ProjectSwitcher } from "@/components/project-switcher";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Dashboard" },
+  { href: "/dashboard", label: "Dashboard" },
   { href: "/explorer", label: "Log Explorer" },
   { href: "/issues", label: "Issues" },
   { href: "/analytics", label: "Analytics" },
@@ -22,6 +22,9 @@ const NAV_ITEMS = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const query = searchParams.toString();
+  const withAppState = (path: string) => (query ? `${path}?${query}` : path);
   const { logout } = useProject();
 
   const handleLogout = () => {
@@ -52,7 +55,7 @@ export function Sidebar() {
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={withAppState(item.href)}
               className={cn(
                 "flex items-center gap-2 px-4 py-2.5 rounded-lg transition-colors text-sm font-medium",
                 isActive

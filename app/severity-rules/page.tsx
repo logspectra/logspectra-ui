@@ -8,15 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { SeverityRuleForm } from "@/components/severity-rule-form";
 import { SeverityRulesTable } from "@/components/severity-rules-table";
+import { PageErrorBanner } from "@/components/page-error-banner";
 
 export default function SeverityRules() {
   const [rules, setRules] = useState<SeverityRule[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<SeverityRule | null>(null);
   const [services, setServices] = useState<string[]>([]);
+  const [pageError, setPageError] = useState("");
 
   useEffect(() => {
     const fetchSeverityRuleData = async () => {
+      setPageError("");
       try {
         const [dashboardData, severityRules] = await Promise.all([
           api.getDashboardData(),
@@ -27,7 +30,7 @@ export default function SeverityRules() {
         }
         setRules(severityRules);
       } catch (error) {
-        console.error("Failed to fetch severity rule data:", error);
+        setPageError(error instanceof Error ? error.message : "Failed to load severity rules");
       }
     };
     fetchSeverityRuleData();
@@ -57,7 +60,7 @@ export default function SeverityRules() {
       setIsFormOpen(false);
       setEditingRule(null);
     } catch (error) {
-      console.error("Failed to save severity rule:", error);
+      setPageError(error instanceof Error ? error.message : "Failed to save severity rule");
     }
   };
 
@@ -65,8 +68,9 @@ export default function SeverityRules() {
     try {
       await api.deleteSeverityRule(ruleId);
       setRules((prevRules) => prevRules.filter((rule) => rule.id !== ruleId));
+      setPageError("");
     } catch (error) {
-      console.error("Failed to delete severity rule:", error);
+      setPageError(error instanceof Error ? error.message : "Failed to delete severity rule");
     }
   };
 
@@ -77,6 +81,7 @@ export default function SeverityRules() {
 
   return (
     <div className="space-y-6">
+      <PageErrorBanner message={pageError} />
       {/* Stats Cards */}
       <div className="grid grid-cols-2 gap-4">
         <Card className="p-4">

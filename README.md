@@ -97,6 +97,26 @@ Use host-reachable URLs such as:
 
 Use container DNS names only for container-to-container communication, not browser-to-container resolution.
 
+## Shareable URL state
+
+The UI keeps **project** and **time range** in the query string so you can bookmark or share a link (any route: dashboard, Explorer, Issues, etc.).
+
+| Query param | Meaning |
+|-------------|---------|
+| `projectId` | Active project UUID |
+| `range` | Preset: `1h`, `3h`, `6h`, `12h`, `24h`, `2d`, `4d`, `7d`, or `custom` |
+| `from` | ISO-8601 start (required when `range=custom`) |
+| `to` | ISO-8601 end (required when `range=custom`) |
+
+Examples:
+
+- `http://localhost:3000/dashboard?projectId=<id>&range=24h`
+- `http://localhost:3000/explorer?projectId=<id>&range=custom&from=2026-10-29T08:00:00.000Z&to=2026-10-29T09:30:00.000Z`
+
+The root path `/` redirects to `/dashboard` (query string preserved). Time-range and project changes **push** a browser history entry so **Back** restores the previous window.
+
+Implementation: `lib/url-app-state.ts`, `components/app-url-state-sync.tsx`.
+
 ## Docker
 
 Build image:

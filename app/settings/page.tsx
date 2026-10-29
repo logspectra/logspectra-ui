@@ -160,9 +160,12 @@ export default function Settings() {
           <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         </div>
         <p className="text-sm text-muted-foreground">Configure LogSpectra dashboard and monitoring preferences</p>
+        <p className="text-xs text-muted-foreground mt-2">
+          Sections below <Badge variant="secondary" className="mx-1">Coming soon</Badge> are UI placeholders; only AI Provider Settings is wired to the backend today.
+        </p>
       </div>
 
-      <Card className="p-6"><h3 className="text-lg font-semibold text-foreground mb-4">Alert Configuration</h3><div className="space-y-4"><div><Label className="text-sm text-muted-foreground mb-2 block">Error Rate Alert Threshold</Label><div className="flex items-center gap-2"><Input type="number" value={settings.alertThreshold} disabled readOnly className="bg-input border-border text-foreground max-w-xs" /><span className="text-sm text-muted-foreground">errors per minute</span></div></div></div></Card>
+      <Card className="p-6 opacity-80"><div className="flex items-center justify-between mb-4"><h3 className="text-lg font-semibold text-foreground">Alert Configuration</h3><Badge variant="secondary">Coming soon</Badge></div><div className="space-y-4"><div><Label className="text-sm text-muted-foreground mb-2 block">Error Rate Alert Threshold</Label><div className="flex items-center gap-2"><Input type="number" value={settings.alertThreshold} disabled readOnly className="bg-input border-border text-foreground max-w-xs" /><span className="text-sm text-muted-foreground">errors per minute</span></div></div></div></Card>
 
       <Card className="p-6"><h3 className="text-lg font-semibold text-foreground mb-4">Data Retention</h3><Select value={settings.retentionDays} disabled><SelectTrigger className="bg-input border-border text-foreground max-w-xs"><SelectValue /></SelectTrigger><SelectContent className="bg-popover border-border"><SelectItem value="0">0</SelectItem><SelectItem value="7">7 days</SelectItem><SelectItem value="14">14 days</SelectItem><SelectItem value="30">30 days</SelectItem><SelectItem value="60">60 days</SelectItem><SelectItem value="90">90 days</SelectItem></SelectContent></Select></Card>
 

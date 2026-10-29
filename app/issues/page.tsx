@@ -20,12 +20,14 @@ import {
 import { api } from "@/lib/api";
 import type { IssueGroup, IssueGroupBy } from "@/lib/types";
 import { TrendingUp, TrendingDown, Brain } from "lucide-react";
+import { PageErrorBanner } from "@/components/page-error-banner";
 
 export default function Issues() {
   const { selectedProject, timeRange, customDateRange } = useProject();
   const [expandedIssueId, setExpandedIssueId] = useState<string | null>(null);
   const [issues, setIssues] = useState<IssueGroup[]>([]);
   const [isLoadingIssues, setIsLoadingIssues] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [serviceFilter, setServiceFilter] = useState("all");
   const [groupBy, setGroupBy] = useState<IssueGroupBy>("service_exception");
@@ -40,6 +42,7 @@ export default function Issues() {
     let cancelled = false;
     const fetchIssues = async () => {
       setIsLoadingIssues(true);
+      setLoadError("");
       try {
         const response = await api.getIssues(timeRange, customDateRange, {
           groupBy,
@@ -50,8 +53,8 @@ export default function Issues() {
         if (!cancelled) setIssues(response || []);
       } catch (error) {
         if (!cancelled) {
-          console.error("Failed to load issues", error);
           setIssues([]);
+          setLoadError(error instanceof Error ? error.message : "Failed to load issues");
         }
       } finally {
         if (!cancelled) setIsLoadingIssues(false);
@@ -120,6 +123,7 @@ export default function Issues() {
 
   return (
     <div className="space-y-6">
+      <PageErrorBanner message={loadError} />
       <Card className="p-4">
         <div className="flex items-end gap-4 flex-wrap">
           <div className="flex-1 min-w-64">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type MouseEvent as ReactMouseEvent } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -72,8 +72,21 @@ export function DashboardErrorRateChart({
     setIsBrushing(false);
   }, []);
 
-  const onMouseDown = (state: { activeTooltipIndex?: number }) => {
+  useEffect(() => {
+    if (!isBrushing) return;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = "none";
+    return () => {
+      document.body.style.userSelect = previousUserSelect;
+    };
+  }, [isBrushing]);
+
+  const onMouseDown = (
+    state: { activeTooltipIndex?: number },
+    event?: ReactMouseEvent<SVGElement>
+  ) => {
     if (state?.activeTooltipIndex == null || !dateWindow) return;
+    event?.preventDefault();
     setBrushLeftIndex(state.activeTooltipIndex);
     setBrushRightIndex(state.activeTooltipIndex);
     setIsBrushing(true);
@@ -142,30 +155,33 @@ export function DashboardErrorRateChart({
 
   return (
     <div>
-      <p className="text-xs text-muted-foreground mb-2">
-        Drag across the chart to zoom the dashboard time range (Grafana-style).
-      </p>
-      <ResponsiveContainer width="100%" height={300}>
-        <LineChart
-          data={chartData}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={() => {
-            if (isBrushing) clearBrush();
-          }}
-          style={{ cursor: "crosshair" }}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis
-            type="number"
-            dataKey="_epochMs"
-            domain={xDomain}
-            scale="time"
-            tick={{ fill: "#6b7280", fontSize: 12 }}
-            tickFormatter={formatEpochTick}
-            axisLine={false}
-          />
+      <div
+        className="select-none touch-none"
+        onMouseDownCapture={(e) => {
+          if (e.button === 0) e.preventDefault();
+        }}
+      >
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart
+            data={chartData}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={() => {
+              if (isBrushing) clearBrush();
+            }}
+            style={{ cursor: "crosshair", userSelect: "none" }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis
+              type="number"
+              dataKey="_epochMs"
+              domain={xDomain}
+              scale="time"
+              tick={{ fill: "#6b7280", fontSize: 12 }}
+              tickFormatter={formatEpochTick}
+              axisLine={false}
+            />
           <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} axisLine={false} allowDecimals={false} />
           <Tooltip content={<TooltipContent />} labelFormatter={(ms) => formatEpochTick(Number(ms))} />
           <Legend />
@@ -192,8 +208,9 @@ export function DashboardErrorRateChart({
               connectNulls
             />
           ))}
-        </LineChart>
-      </ResponsiveContainer>
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

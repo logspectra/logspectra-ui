@@ -1,38 +1,54 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/project-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Plus, Folder, LogOut } from 'lucide-react';
+import { PageErrorBanner } from '@/components/page-error-banner';
 
 export default function ProjectsPage() {
   const router = useRouter();
-  const { user, projects, selectProject, createProject, logout } = useProject();
+  const { user, projects, selectProject, createProject, logout, isLoading } = useProject();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [projectDesc, setProjectDesc] = useState('');
+  const [actionError, setActionError] = useState('');
 
-  if (!user) {
-    router.push('/login');
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.replace('/login');
+    }
+  }, [isLoading, user, router]);
+
+  if (isLoading || !user) {
     return null;
   }
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (projectName.trim()) {
+    if (!projectName.trim()) return;
+    setActionError('');
+    try {
       await createProject(projectName, projectDesc);
       setProjectName('');
       setProjectDesc('');
       setShowCreateModal(false);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to create project');
     }
   };
 
   const handleSelectProject = async (projectId: string) => {
-    await selectProject(projectId);
-    router.push('/');
+    setActionError('');
+    try {
+      await selectProject(projectId);
+      router.push('/dashboard');
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to open project');
+    }
   };
 
   const handleLogout = () => {
@@ -60,6 +76,7 @@ export default function ProjectsPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <PageErrorBanner message={actionError} />
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-2xl font-bold text-foreground">Your Projects</h2>
           <Button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2">
