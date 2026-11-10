@@ -117,25 +117,30 @@ The root path `/` redirects to `/dashboard` (query string preserved). Time-range
 
 Implementation: `lib/url-app-state.ts`, `components/app-url-state-sync.tsx`.
 
-## Docker
+## Docker / Docker Hub
 
-Build image:
+Images: `logspectra/logspectra-ui` on [Docker Hub](https://hub.docker.com/r/logspectra/logspectra-ui).
 
-```bash
-docker build -t logspectra/logspectra-ui:1.0.0 .
-```
-
-Run image:
+### Pull & run
 
 ```bash
-docker run --name logspectra-ui -p 3050:3050 -e NEXT_PUBLIC_API_BASE_URL=http://localhost:8080 logspectra/logspectra-ui:1.0.0
+docker pull logspectra/logspectra-ui:latest
+docker run --name logspectra-ui -p 3050:3050 \
+  -e NEXT_PUBLIC_API_BASE_URL=http://localhost:8080 \
+  logspectra/logspectra-ui:latest
 ```
 
-Compose run (UI only):
+Compose (UI only):
 
 ```bash
 docker compose up -d --build
 ```
+
+### Publish (maintainers)
+
+Same Docker Hub repo: [logspectra/logspectra-ui](https://hub.docker.com/r/logspectra/logspectra-ui)
+
+Publishing is **CI-only**: `.github/workflows/docker-publish.yml` on **`main`** pushes `latest` + commit sha. Repo secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
 
 ## Quality and Linting
 
