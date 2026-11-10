@@ -10,6 +10,8 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Secrets live in GitHub Environment "logspectra" (or repo-level Actions secrets)
+    environment: logspectra
     permissions:
       contents: read
     steps:

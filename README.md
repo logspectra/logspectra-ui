@@ -140,7 +140,7 @@ docker compose up -d --build
 
 Same Docker Hub repo: [logspectra/logspectra-ui](https://hub.docker.com/r/logspectra/logspectra-ui)
 
-Publishing is **CI-only**: `.github/workflows/docker-publish.yml` on **`main`** pushes `latest` + commit sha. Repo secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
+Publishing is **CI-only**: `.github/workflows/docker-publish.yml` on **`main`** pushes `latest` + commit sha. Set `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` in the **`logspectra` environment** (Settings → Environments → logspectra) or as repo Actions secrets. The workflow uses `environment: logspectra`.
 
 ## Quality and Linting
 
