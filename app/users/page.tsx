@@ -7,6 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, ManagedUser } from "@/lib/api";
+import { Users as UsersIcon } from "lucide-react";
+import { PageErrorBanner } from "@/components/page-error-banner";
+import { PageHeader, PageShell } from "@/components/page-shell";
+import { PanelCard } from "@/components/panel-card";
 
 export default function UsersPage() {
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -36,15 +40,23 @@ export default function UsersPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.createUser(username, password, role);
-    setUsername("");
-    setPassword("");
-    await loadUsers();
+    try {
+      await api.createUser(username, password, role);
+      setUsername("");
+      setPassword("");
+      await loadUsers();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create user");
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await api.deleteUser(id);
-    await loadUsers();
+    try {
+      await api.deleteUser(id);
+      await loadUsers();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete user");
+    }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -73,9 +85,15 @@ export default function UsersPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <Card className="p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">Create User</h2>
+    <PageShell className="max-w-4xl space-y-6">
+      <PageHeader
+        icon={UsersIcon}
+        eyebrow="Access"
+        title="Users"
+        description="Create accounts and manage your password."
+      />
+      <PageErrorBanner message={error} />
+      <PanelCard title="Create user">
         <form className="grid grid-cols-4 gap-3" onSubmit={handleCreate}>
           <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username" required />
           <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" required />
@@ -85,11 +103,10 @@ export default function UsersPage() {
           </Select>
           <Button type="submit">Create</Button>
         </form>
-      </Card>
+      </PanelCard>
 
-      <Card className="p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">Change Password</h2>
-        <form className="grid grid-cols-4 gap-3" onSubmit={handleChangePassword}>
+      <PanelCard title="Change password">
+        <form className="grid grid-cols-1 gap-3 sm:grid-cols-4" onSubmit={handleChangePassword}>
           <Input
             type="password"
             value={currentPassword}
@@ -117,11 +134,9 @@ export default function UsersPage() {
         </form>
         {passwordError && <p className="text-sm text-red-500 mt-3">{passwordError}</p>}
         {passwordSaved && <p className="text-sm text-green-600 mt-3">Password changed successfully</p>}
-      </Card>
+      </PanelCard>
 
-      <Card className="p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">Users</h2>
-        {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
+      <PanelCard title="All users">
         <div className="space-y-2">
           {users.map((u) => (
             <div key={u.id} className="flex items-center justify-between border border-border rounded p-3">
@@ -137,7 +152,7 @@ export default function UsersPage() {
             </div>
           ))}
         </div>
-      </Card>
-    </div>
+      </PanelCard>
+    </PageShell>
   );
 }

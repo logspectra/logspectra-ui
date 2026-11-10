@@ -1,14 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useEffect, useState, Suspense } from 'react';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useProject } from '@/lib/project-context';
 import { Sidebar } from '@/components/sidebar';
 import { Header } from '@/components/header';
+import { LiveStreamProvider } from '@/lib/live-stream-context';
 
 function LayoutContentInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, selectedProject, isLoading } = useProject();
   const [isMounted, setIsMounted] = useState(false);
 
@@ -24,7 +26,8 @@ function LayoutContentInner({ children }: { children: React.ReactNode }) {
 
     // If not logged in and not on public route, redirect to login
     if (!user && !isPublicRoute) {
-      router.push('/login');
+      const returnTo = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+      router.push(`/login?next=${encodeURIComponent(returnTo)}`);
       return;
     }
 
@@ -46,16 +49,22 @@ function LayoutContentInner({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <>
-      <Sidebar />
+    <LiveStreamProvider>
+      <Suspense fallback={null}>
+        <Sidebar />
+      </Suspense>
       <Header />
-      <main className="ml-60 mt-16 p-6">
+      <main className="app-backdrop ml-60 mt-16 min-h-[calc(100vh-4rem)] px-8 py-7">
         {children}
       </main>
-    </>
+    </LiveStreamProvider>
   );
 }
 
 export function LayoutContent({ children }: { children: React.ReactNode }) {
-  return <LayoutContentInner>{children}</LayoutContentInner>;
+  return (
+    <Suspense fallback={<>{children}</>}>
+      <LayoutContentInner>{children}</LayoutContentInner>
+    </Suspense>
+  );
 }

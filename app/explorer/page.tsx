@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProject } from "@/lib/project-context";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,29 +39,43 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { AIAnalysisPanel } from "../../components/ai-analysis-panel";
-import { api } from "@/lib/api";
+import { api, type AnalyzeProvider, resolveDateWindow } from "@/lib/api";
+import { useLiveLogStream } from "@/hooks/use-live-log-stream";
+import { useLiveStreamPreference } from "@/lib/live-stream-context";
 import type { AnalysisStreamEvent } from "@/lib/api";
 import type { AnalysisResult, LogEntry } from "@/lib/types";
-import { Eye, Brain, Copy, Check, CheckCircle2 } from "lucide-react";
+import { Eye, Bug, Copy, Check, CheckCircle2, Search } from "lucide-react";
+import { PageErrorBanner } from "@/components/page-error-banner";
+import { PageHeader, PageShell } from "@/components/page-shell";
+import { PanelCard } from "@/components/panel-card";
+import { AnalyticsChartTooltip } from "@/components/analytics-chart-tooltip";
+import { chartAxisTick, chartGrid } from "@/lib/recharts-theme";
+import { logLevelClass } from "@/lib/level-styles";
 
 export default function LogExplorer() {
   const { selectedProject, timeRange, customDateRange } = useProject();
+  const { sseEnabled } = useLiveStreamPreference();
   const [search, setSearch] = useState("");
   const [service, setService] = useState("all");
   const [level, setLevel] = useState("all");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [totalLogs, setTotalLogs] = useState(0);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [searchLoadError, setSearchLoadError] = useState("");
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [analysisEvents, setAnalysisEvents] = useState<AnalysisStreamEvent[]>([]);
   const [analysisError, setAnalysisError] = useState("");
+  const [isApplyingFix, setIsApplyingFix] = useState(false);
+  const [fixError, setFixError] = useState("");
+  const [analyzeProvider, setAnalyzeProvider] = useState<AnalyzeProvider>("OPENAI");
   const [copiedTraceId, setCopiedTraceId] = useState(false);
   const [showChart, setShowChart] = useState(false);
   const [selectedLogIds, setSelectedLogIds] = useState<Set<string>>(new Set());
   const [isResolving, setIsResolving] = useState(false);
+  const [resolveError, setResolveError] = useState("");
   const analysisAbortRef = useRef<AbortController | null>(null);
 
   const LevelColors: Record<string, string> = {
@@ -72,29 +86,8 @@ export default function LogExplorer() {
   };
 
   const getDateWindowForSearch = (): { from: string; to: string } | null => {
-    if (timeRange === "custom") {
-      if (!(customDateRange.from instanceof Date) || !(customDateRange.to instanceof Date)) return null;
-      const from = new Date(customDateRange.from);
-      const to = new Date(customDateRange.to);
-      from.setHours(0, 0, 0, 0);
-      to.setHours(23, 59, 59, 999);
-      return { from: from.toISOString(), to: to.toISOString() };
-    }
-
-    const hours =
-      timeRange === "1h"
-        ? 1
-        : timeRange === "6h"
-          ? 6
-          : timeRange === "24h"
-            ? 24
-            : timeRange === "7d"
-              ? 24 * 7
-              : 24 * 30;
-    return {
-      from: new Date(Date.now() - hours * 3600_000).toISOString(),
-      to: new Date().toISOString(),
-    };
+    const window = resolveDateWindow(timeRange, customDateRange);
+    return window ? { from: window.from, to: window.to } : null;
   };
 
   useEffect(() => {
@@ -108,6 +101,7 @@ export default function LogExplorer() {
     let cancelled = false;
     const timeout = setTimeout(async () => {
       setIsLoadingLogs(true);
+      setSearchLoadError("");
       try {
         const result = await api.searchLogs({
           from: window.from,
@@ -129,7 +123,7 @@ export default function LogExplorer() {
         }
       } catch (error) {
         if (cancelled) return;
-        console.error("Failed to search logs", error);
+        setSearchLoadError(error instanceof Error ? error.message : "Failed to search logs");
         setLogs([]);
         setTotalLogs(0);
       } finally {
@@ -151,6 +145,30 @@ export default function LogExplorer() {
     level,
   ]);
 
+  const onLiveLog = useCallback(
+    (incoming: LogEntry) => {
+      const searchNeedle = search.trim().toLowerCase();
+      if (searchNeedle && !incoming.message.toLowerCase().includes(searchNeedle)) {
+        return;
+      }
+
+      setLogs((prev) => {
+        if (prev.some((entry) => entry.id === incoming.id)) return prev;
+        return [incoming, ...prev].slice(0, 200);
+      });
+      setTotalLogs((count) => count + 1);
+    },
+    [search]
+  );
+
+  useLiveLogStream({
+    projectId: selectedProject?.id,
+    enabled: sseEnabled && !!selectedProject?.id,
+    service: service !== "all" ? service : undefined,
+    level: level !== "all" ? level : undefined,
+    onLog: onLiveLog,
+  });
+
   useEffect(() => {
     analysisAbortRef.current?.abort();
     setIsAnalyzing(false);
@@ -163,6 +181,22 @@ export default function LogExplorer() {
   useEffect(() => {
     return () => {
       analysisAbortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getAiSettings()
+      .then((settings) => {
+        if (!cancelled && settings.provider) {
+          setAnalyzeProvider(settings.provider);
+        }
+      })
+      .catch(() => {
+        // keep default provider
+      });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -251,6 +285,7 @@ export default function LogExplorer() {
     setIsAnalyzing(true);
     setShowAnalysis(true);
     setAnalysisError("");
+    setFixError("");
     setAnalysisResult(null);
     setAnalysisEvents([]);
 
@@ -266,6 +301,24 @@ export default function LogExplorer() {
           return [...prev, event];
         }
 
+        if (event.type === "token") {
+          const last = prev[prev.length - 1];
+          if (last?.type === "token") {
+            const nextEvents = [...prev];
+            nextEvents[nextEvents.length - 1] = {
+              ...last,
+              message: last.message + event.message,
+            };
+            return nextEvents;
+          }
+          return [...prev, event];
+        }
+
+        if (event.type === "error") {
+          setAnalysisError(event.message);
+          setIsAnalyzing(false);
+        }
+
         const lastEvent = prev[prev.length - 1];
         if (lastEvent?.type === event.type && lastEvent.message === event.message) {
           return prev;
@@ -275,7 +328,8 @@ export default function LogExplorer() {
     };
 
     try {
-      const analysis = await api.streamAnalyzeLog(traceId, "OPENAI", {
+      const analysis = await api.streamAnalyzeLog(traceId, {
+        provider: analyzeProvider,
         signal: controller.signal,
         onProgress: (event) => {
           if (controller.signal.aborted) return;
@@ -286,7 +340,7 @@ export default function LogExplorer() {
           setAnalysisResult(result);
           appendAnalysisEvent({
             type: "result",
-            message: "Analysis result received",
+            message: "Debug diagnosis ready",
             timestamp: new Date().toISOString(),
           });
           setIsAnalyzing(false);
@@ -303,10 +357,15 @@ export default function LogExplorer() {
         setIsAnalyzing(false);
       }
     } catch (error) {
-      if (!controller.signal.aborted) {
-        console.error("❌ Failed to analyze log:", error);
-        setAnalysisError(error instanceof Error ? error.message : "Failed to analyze log");
+      if (controller.signal.aborted) {
+        return;
       }
+      const message = error instanceof Error ? error.message : "Debug session failed";
+      if (message.toLowerCase().includes("abort")) {
+        return;
+      }
+      console.error("Failed to analyze log:", error);
+      setAnalysisError(message);
     } finally {
       if (!controller.signal.aborted) {
         setIsAnalyzing(false);
@@ -314,6 +373,41 @@ export default function LogExplorer() {
       if (analysisAbortRef.current === controller) {
         analysisAbortRef.current = null;
       }
+    }
+  };
+
+  const handleApplyFix = async () => {
+    const fingerprint = analysisResult?.fingerprint;
+    const traceId = selectedLog?.traceId;
+    if (!traceId) {
+      setFixError("Select a log with a trace ID.");
+      return;
+    }
+    if (!fingerprint) {
+      setFixError(
+        "Missing issue fingerprint — re-run Debug. If analysis completed with a warning, fix the backend issue registry first."
+      );
+      return;
+    }
+
+    setIsApplyingFix(true);
+    setFixError("");
+    try {
+      const remediation = await api.applyRemediation(fingerprint, traceId);
+      setAnalysisResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              remediationPrUrl: remediation.remediationPrUrl,
+              remediationBranch: remediation.remediationBranch,
+              remediationPrNumber: remediation.remediationPrNumber,
+            }
+          : prev
+      );
+    } catch (error) {
+      setFixError(error instanceof Error ? error.message : "Failed to apply fix on GitHub");
+    } finally {
+      setIsApplyingFix(false);
     }
   };
 
@@ -342,28 +436,31 @@ export default function LogExplorer() {
     if (selectedLogIds.size === 0) return;
 
     setIsResolving(true);
+    setResolveError("");
     try {
       const logIds = Array.from(selectedLogIds);
-      console.log("[v0] Resolving logs:", logIds);
-      
       await api.resolveLogs(logIds);
-      
-      console.log("[v0] Logs resolved successfully");
-      // Remove resolved logs from the list
       setLogs((prevLogs) => prevLogs.filter((log) => !selectedLogIds.has(log.id)));
       setSelectedLogIds(new Set());
-      setTotalLogs((prev) => Math.max(0, prev - selectedLogIds.size));
+      setTotalLogs((prev) => Math.max(0, prev - logIds.length));
     } catch (error) {
-      console.error("[v0] Failed to resolve logs:", error);
+      setResolveError(error instanceof Error ? error.message : "Failed to resolve logs");
     } finally {
       setIsResolving(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Filter Bar */}
-      <Card className="p-4">
+    <PageShell className="space-y-6">
+      <PageHeader
+        icon={Search}
+        eyebrow="Investigate"
+        title="Log Explorer"
+        description="Search, triage, and run AI analysis on logs in the selected time range."
+      />
+      <PageErrorBanner message={searchLoadError || resolveError} />
+
+      <PanelCard title="Filters" variant="compact">
         <div className="flex items-end gap-4 flex-wrap">
           <div className="flex-1 min-w-64">
             <label className="text-xs text-muted-foreground block mb-2">Search</label>
@@ -428,24 +525,16 @@ export default function LogExplorer() {
             </Button>
           </div>
         </div>
-      </Card>
+      </PanelCard>
 
-      {/* Collapsible Chart */}
       {showChart && (
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Log Volume over Time</h3>
+        <PanelCard title="Log volume over time" variant="compact">
           <ResponsiveContainer width="100%" height={80}>
             <AreaChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis dataKey="label" tick={{ fill: "#71717a", fontSize: 10 }} minTickGap={24} />
-              <YAxis tick={{ fill: "#71717a", fontSize: 10 }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#18181b",
-                  border: "1px solid #3f3f46",
-                  color: "#fff",
-                }}
-              />
+              <CartesianGrid {...chartGrid} />
+              <XAxis dataKey="label" tick={chartAxisTick} axisLine={false} tickLine={false} minTickGap={24} />
+              <YAxis tick={chartAxisTick} axisLine={false} tickLine={false} width={28} />
+              <Tooltip content={<AnalyticsChartTooltip />} />
               <Area
                 type="monotone"
                 dataKey="total"
@@ -464,25 +553,29 @@ export default function LogExplorer() {
               />
             </AreaChart>
           </ResponsiveContainer>
-        </Card>
+        </PanelCard>
       )}
 
-      {/* Logs Table */}
-      <Card className="p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-xs text-muted-foreground">
-            {isLoadingLogs ? "Loading logs..." : `Showing ${logs.length} of ${totalLogs} logs`}
-            {selectedLogIds.size > 0 && <span className="ml-4 font-semibold text-foreground">{selectedLogIds.size} selected</span>}
-          </div>
-          {selectedLogIds.size > 0 && (
+      <PanelCard
+        title="Results"
+        action={
+          selectedLogIds.size > 0 ? (
             <Button
               onClick={handleResolveLogs}
               disabled={isResolving}
-              className="bg-green-600 hover:bg-green-700"
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700"
             >
-              <CheckCircle2 className="w-4 h-4 mr-2" />
-              {isResolving ? "Resolving..." : `Resolve (${selectedLogIds.size})`}
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              {isResolving ? "Resolving…" : `Resolve (${selectedLogIds.size})`}
             </Button>
+          ) : null
+        }
+      >
+        <div className="mb-4 text-xs text-muted-foreground">
+          {isLoadingLogs ? "Loading logs…" : `Showing ${logs.length} of ${totalLogs} logs`}
+          {selectedLogIds.size > 0 && (
+            <span className="ml-3 font-medium text-foreground">{selectedLogIds.size} selected</span>
           )}
         </div>
         <div className="overflow-x-auto">
@@ -491,7 +584,6 @@ export default function LogExplorer() {
               <TableRow className="border-border hover:bg-transparent">
                 <TableHead className="w-12">
                   <Checkbox
-                    className="border-zinc-300 bg-zinc-100 text-zinc-900 data-[state=checked]:bg-zinc-200 data-[state=checked]:text-zinc-900 data-[state=checked]:border-zinc-400"
                     checked={selectedLogIds.size === unresolvedLogs.length && unresolvedLogs.length > 0}
                     onCheckedChange={handleSelectAll}
                     disabled={unresolvedLogs.length === 0}
@@ -518,7 +610,6 @@ export default function LogExplorer() {
                         <CheckCircle2 className="w-4 h-4 text-green-500" aria-label="Resolved log" />
                       ) : (
                         <Checkbox
-                          className="border-zinc-300 bg-zinc-100 text-zinc-900 data-[state=checked]:bg-zinc-200 data-[state=checked]:text-zinc-900 data-[state=checked]:border-zinc-400"
                           checked={selectedLogIds.has(log.id)}
                           onCheckedChange={() => handleToggleCheckbox(log.id)}
                           aria-label={`Select log ${log.id}`}
@@ -529,25 +620,15 @@ export default function LogExplorer() {
                       {log.timestamp.toLocaleTimeString()}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        className={
-                          log.level === "ERROR"
-                            ? "bg-red-900 text-red-100"
-                            : log.level === "WARN"
-                              ? "bg-yellow-900 text-yellow-100"
-                              : log.level === "INFO"
-                                ? "bg-blue-900 text-blue-100"
-                                : "bg-zinc-700 text-zinc-100"
-                        }
-                      >
+                      <Badge variant="outline" className={logLevelClass(log.level)}>
                         {log.level}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {log.service}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground font-mono">
-                      {log.traceId ? `${log.traceId.slice(0, 12)}...` : "-"}
+                    <TableCell className="font-mono text-[11px] text-muted-foreground">
+                      {log.traceId ? `${log.traceId.slice(0, 12)}…` : "—"}
                     </TableCell>
                     <TableCell className="text-sm text-foreground max-w-xs truncate">
                       {log.message}
@@ -575,15 +656,14 @@ export default function LogExplorer() {
             </TableBody>
           </Table>
         </div>
-      </Card>
+      </PanelCard>
 
-      {/* Log Detail Sheet */}
       <Sheet open={!!selectedLog} onOpenChange={() => setSelectedLog(null)}>
         <SheetContent className="overflow-y-auto px-0 w-[95vw] sm:w-[88vw] md:w-[76vw] lg:w-[64vw] xl:w-[56vw] sm:max-w-none">
           <SheetHeader className="px-6 pt-6 pb-4 border-b border-border">
             <SheetTitle className="text-foreground">Log Details</SheetTitle>
             <SheetDescription className="text-muted-foreground">
-              View and analyze this log entry
+              Inspect this log entry and run an AI debug session
             </SheetDescription>
           </SheetHeader>
 
@@ -593,17 +673,7 @@ export default function LogExplorer() {
               <div className="space-y-3 rounded-lg border border-border bg-card p-4">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Level</p>
-                  <Badge
-                    className={
-                      selectedLog.level === "ERROR"
-                        ? "bg-red-900 text-red-100"
-                        : selectedLog.level === "WARN"
-                          ? "bg-yellow-900 text-yellow-100"
-                          : selectedLog.level === "INFO"
-                            ? "bg-blue-900 text-blue-100"
-                            : "bg-zinc-700 text-zinc-100"
-                    }
-                  >
+                  <Badge variant="outline" className={logLevelClass(selectedLog.level)}>
                     {selectedLog.level}
                   </Badge>
                 </div>
@@ -657,46 +727,42 @@ export default function LogExplorer() {
                 </div>
               )}
 
-              {/* Actions */}
-              <div className="flex gap-2 pt-1">
+              {/* Debug */}
+              <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4 pt-3">
+                <p className="text-xs text-muted-foreground">
+                  Debug loads the trace and suggests fixes. Use <strong>Apply fix</strong> afterward to commit patches on the
+                  remediation branch and open or update the GitHub PR (requires GitHub App + service git URL).
+                </p>
                 <Button
-                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  className="w-full bg-blue-600 hover:bg-blue-700"
                   onClick={handleAnalyze}
                   disabled={isAnalyzing || !selectedLog.traceId}
                 >
-                  <Brain className="w-4 h-4 mr-2" />
-                  {isAnalyzing ? "Analyzing..." : "Explain This Issue"}
+                  <Bug className="mr-2 h-4 w-4" />
+                  {isAnalyzing ? "Debugging…" : "Debug"}
                 </Button>
               </div>
 
-              {/* AI Analysis */}
               {showAnalysis && (
-                <div className="pt-4 border-t border-border">
-                  {analysisResult && (
-                    <AIAnalysisPanel
-                      result={analysisResult}
-                      events={analysisEvents}
-                      isStreaming={isAnalyzing}
-                      error={analysisError}
-                      traceId={selectedLog.traceId}
-                      onClose={() => setShowAnalysis(false)}
-                    />
-                  )}
-                  {!analysisResult && (isAnalyzing || analysisEvents.length > 0 || analysisError) && (
-                    <AIAnalysisPanel
-                      events={analysisEvents}
-                      isStreaming={isAnalyzing}
-                      error={analysisError}
-                      traceId={selectedLog.traceId}
-                      onClose={() => setShowAnalysis(false)}
-                    />
-                  )}
+                <div className="border-t border-border pt-4">
+                  <AIAnalysisPanel
+                    result={analysisResult}
+                    events={analysisEvents}
+                    isStreaming={isAnalyzing}
+                    error={analysisError}
+                    fixError={fixError}
+                    traceId={selectedLog.traceId}
+                    providerLabel={analyzeProvider}
+                    isApplyingFix={isApplyingFix}
+                    onApplyFix={handleApplyFix}
+                    onClose={() => setShowAnalysis(false)}
+                  />
                 </div>
               )}
             </div>
           )}
         </SheetContent>
       </Sheet>
-    </div>
+    </PageShell>
   );
 }

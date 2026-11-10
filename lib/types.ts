@@ -25,6 +25,7 @@ export interface LogEntry {
   service: string;
   traceId: string;
   message: string;
+  endpoint?: string;
   stackTrace?: string;
   resolved?: boolean;
 }
@@ -61,10 +62,18 @@ export interface AnalysisResult {
     effort: "QUICK" | "MEDIUM" | "COMPLEX";
     description: string;
     code: string;
+    filePath?: string;
+    search?: string;
+    replace?: string;
+    newContent?: string;
   }[];
   relatedTraceIds: string[];
+  fingerprint?: string;
   analyzedAt: Date;
   cached: boolean;
+  remediationPrUrl?: string;
+  remediationBranch?: string;
+  remediationPrNumber?: number;
 }
 
 // Dashboard Stats
@@ -118,6 +127,14 @@ export interface ComposedPoint {
 export interface AreaPoint {
   hour: number;
   value: number;
+}
+
+/** Open vs resolved ERROR counts per time bucket (analytics triage chart). */
+export interface ErrorTriagePoint {
+  period: string;
+  periodKey: string;
+  open: number;
+  resolved: number;
 }
 
 export interface DualLinePoint {

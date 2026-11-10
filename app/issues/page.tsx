@@ -19,13 +19,19 @@ import {
 } from "recharts";
 import { api } from "@/lib/api";
 import type { IssueGroup, IssueGroupBy } from "@/lib/types";
-import { TrendingUp, TrendingDown, Brain } from "lucide-react";
+import { severityClass } from "@/lib/level-styles";
+import { TrendingUp, TrendingDown, Brain, AlertCircle } from "lucide-react";
+import { PageErrorBanner } from "@/components/page-error-banner";
+import { PageHeader, PageShell } from "@/components/page-shell";
+import { PanelCard } from "@/components/panel-card";
+import { StatCard } from "@/components/stat-card";
 
 export default function Issues() {
   const { selectedProject, timeRange, customDateRange } = useProject();
   const [expandedIssueId, setExpandedIssueId] = useState<string | null>(null);
   const [issues, setIssues] = useState<IssueGroup[]>([]);
   const [isLoadingIssues, setIsLoadingIssues] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [serviceFilter, setServiceFilter] = useState("all");
   const [groupBy, setGroupBy] = useState<IssueGroupBy>("service_exception");
@@ -40,6 +46,7 @@ export default function Issues() {
     let cancelled = false;
     const fetchIssues = async () => {
       setIsLoadingIssues(true);
+      setLoadError("");
       try {
         const response = await api.getIssues(timeRange, customDateRange, {
           groupBy,
@@ -50,8 +57,8 @@ export default function Issues() {
         if (!cancelled) setIssues(response || []);
       } catch (error) {
         if (!cancelled) {
-          console.error("Failed to load issues", error);
           setIssues([]);
+          setLoadError(error instanceof Error ? error.message : "Failed to load issues");
         }
       } finally {
         if (!cancelled) setIsLoadingIssues(false);
@@ -119,8 +126,16 @@ export default function Issues() {
   };
 
   return (
-    <div className="space-y-6">
-      <Card className="p-4">
+    <PageShell className="space-y-6">
+      <PageHeader
+        icon={AlertCircle}
+        eyebrow="Triage"
+        title="Issues"
+        description="Grouped errors with severity, trends, and trace context for the selected window."
+      />
+      <PageErrorBanner message={loadError} />
+
+      <PanelCard title="Filters" variant="compact">
         <div className="flex items-end gap-4 flex-wrap">
           <div className="flex-1 min-w-64">
             <label className="text-xs text-muted-foreground block mb-2">Search</label>
@@ -162,31 +177,18 @@ export default function Issues() {
             </Select>
           </div>
         </div>
-      </Card>
+      </PanelCard>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="p-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Open Issues</p>
-            <p className="text-3xl font-bold text-foreground mt-2">{stats.open}</p>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Critical Issues</p>
-            <p className="text-3xl font-bold text-foreground mt-2 text-red-500">{stats.critical}</p>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Affected Services</p>
-            <p className="text-3xl font-bold text-foreground mt-2">{stats.affectedServices}</p>
-          </div>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <StatCard label="Open issues" value={stats.open} />
+        <StatCard
+          label="Critical"
+          value={stats.critical}
+          hint={<span className="text-red-600">Requires immediate attention</span>}
+        />
+        <StatCard label="Affected services" value={stats.affectedServices} />
       </div>
 
-      {/* Issues List */}
       <div className="space-y-3">
         {filteredIssues.map((issue) => (
           <Card
@@ -202,17 +204,7 @@ export default function Issues() {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
-                  <Badge
-                    className={
-                      issue.severity === "CRITICAL"
-                        ? "bg-red-900 text-red-100"
-                        : issue.severity === "HIGH"
-                          ? "bg-orange-900 text-orange-100"
-                          : issue.severity === "MEDIUM"
-                            ? "bg-yellow-900 text-yellow-100"
-                            : "bg-blue-900 text-blue-100"
-                    }
-                  >
+                  <Badge variant="outline" className={severityClass(issue.severity)}>
                     {issue.severity}
                   </Badge>
                   <h3 className="text-sm font-semibold text-foreground">
@@ -336,6 +328,6 @@ export default function Issues() {
           </Card>
         )}
       </div>
-    </div>
+    </PageShell>
   );
 }

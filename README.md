@@ -97,25 +97,50 @@ Use host-reachable URLs such as:
 
 Use container DNS names only for container-to-container communication, not browser-to-container resolution.
 
-## Docker
+## Shareable URL state
 
-Build image:
+The UI keeps **project** and **time range** in the query string so you can bookmark or share a link (any route: dashboard, Explorer, Issues, etc.).
+
+| Query param | Meaning |
+|-------------|---------|
+| `projectId` | Active project UUID |
+| `range` | Preset: `1h`, `3h`, `6h`, `12h`, `24h`, `2d`, `4d`, `7d`, or `custom` |
+| `from` | ISO-8601 start (required when `range=custom`) |
+| `to` | ISO-8601 end (required when `range=custom`) |
+
+Examples:
+
+- `http://localhost:3000/dashboard?projectId=<id>&range=24h`
+- `http://localhost:3000/explorer?projectId=<id>&range=custom&from=2026-10-29T08:00:00.000Z&to=2026-10-29T09:30:00.000Z`
+
+The root path `/` redirects to `/dashboard` (query string preserved). Time-range and project changes **push** a browser history entry so **Back** restores the previous window.
+
+Implementation: `lib/url-app-state.ts`, `components/app-url-state-sync.tsx`.
+
+## Docker / Docker Hub
+
+Images: `logspectra/logspectra-ui` on [Docker Hub](https://hub.docker.com/r/logspectra/logspectra-ui).
+
+### Pull & run
 
 ```bash
-docker build -t logspectra/logspectra-ui:1.0.0 .
+docker pull logspectra/logspectra-ui:latest
+docker run --name logspectra-ui -p 3050:3050 \
+  -e NEXT_PUBLIC_API_BASE_URL=http://localhost:8080 \
+  logspectra/logspectra-ui:latest
 ```
 
-Run image:
-
-```bash
-docker run --name logspectra-ui -p 3050:3050 -e NEXT_PUBLIC_API_BASE_URL=http://localhost:8080 logspectra/logspectra-ui:1.0.0
-```
-
-Compose run (UI only):
+Compose (UI only):
 
 ```bash
 docker compose up -d --build
 ```
+
+### Publish (maintainers)
+
+Same Docker Hub repo: [logspectra/logspectra-ui](https://hub.docker.com/r/logspectra/logspectra-ui)
+
+Publishing is **CI-only**: `.github/workflows/docker-publish.yml` on **`main`** pushes `latest` + commit sha. Repo secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
 
 ## Quality and Linting
 

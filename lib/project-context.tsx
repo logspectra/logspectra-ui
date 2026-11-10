@@ -4,8 +4,10 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Project } from './types';
 import { authUtils } from './auth';
 import type { CustomDateRange } from './api';
+import type { TimeRange } from './time-range';
+import { parseAppUrlState } from './url-app-state';
 
-export type TimeRange = '1h' | '6h' | '24h' | '7d' | '30d' | 'custom';
+export type { TimeRange } from './time-range';
 
 interface ProjectContextType {
   user: User | null;
@@ -20,6 +22,8 @@ interface ProjectContextType {
   createProject: (name: string, description?: string) => Promise<void>;
   setTimeRange: (timeRange: TimeRange) => Promise<void>;
   setCustomDateRange: (dateRange: CustomDateRange) => Promise<void>;
+  /** Sets global query window to an exact custom from/to (e.g. chart brush). */
+  applyCustomWindow: (from: Date, to: Date) => Promise<void>;
 }
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
@@ -42,10 +46,25 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         const userProjects = await authUtils.getUserProjects(currentUser.id);
         setProjects(userProjects);
 
-        const selectedProjectId = authUtils.getSelectedProjectId();
+        const urlProjectId =
+          typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('projectId')?.trim() || null
+            : null;
+        const selectedProjectId = urlProjectId || authUtils.getSelectedProjectId();
         const project = selectedProjectId
           ? userProjects.find((p) => p.id === selectedProjectId)
           : userProjects[0];
+
+        const urlState =
+          typeof window !== 'undefined'
+            ? parseAppUrlState(new URLSearchParams(window.location.search))
+            : null;
+        if (urlState?.timeRange === 'custom' && urlState.customDateRange.from && urlState.customDateRange.to) {
+          setCustomDateRangeState(urlState.customDateRange);
+          setTimeRangeState('custom');
+        } else if (urlState?.timeRange) {
+          setTimeRangeState(urlState.timeRange);
+        }
 
         if (project) {
           authUtils.setSelectedProjectId(project.id);
@@ -121,6 +140,12 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setCustomDateRangeState(dateRange);
   };
 
+  const applyCustomWindow = async (from: Date, to: Date): Promise<void> => {
+    if (from.getTime() >= to.getTime()) return;
+    setCustomDateRangeState({ from, to });
+    setTimeRangeState("custom");
+  };
+
   return (
     <ProjectContext.Provider
       value={{
@@ -136,6 +161,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         createProject,
         setTimeRange,
         setCustomDateRange,
+        applyCustomWindow,
       }}
     >
       {children}

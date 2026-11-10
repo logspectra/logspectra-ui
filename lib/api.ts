@@ -1,10 +1,10 @@
 import type {
   AnalysisResult,
-  AreaPoint,
   BarPoint,
   ComposedPoint,
   DashboardStats,
   DualLinePoint,
+  ErrorTriagePoint,
   HeatmapCell,
   HorizontalBarPoint,
   SeverityMixPoint,
@@ -20,6 +20,26 @@ import type {
   TimeSeriesPoint,
   User,
 } from "./types";
+import { createEmptyDashboardData } from "@/lib/dashboard-data";
+import { resolveDateWindow } from "@/lib/date-window";
+import {
+  bucketMsForWindow,
+  buildErrorTimelineFromAggregations,
+  buildErrorTimelineFromIngestion,
+  buildErrorTimelineFromLogs,
+  densifyErrorTimeline,
+} from "@/lib/error-timeline";
+import {
+  buildHeatmapFromErrorLogs,
+  buildTopEndpointsFromLogs,
+  buildErrorTriageFromLogs,
+  buildTopErrorsFromLogs,
+} from "@/lib/dashboard-charts";
+import { normalizeIssueWindow } from "@/lib/time-range";
+
+export { resolveDateWindow, isWithinDateWindow } from "@/lib/date-window";
+export type { ResolvedDateWindow, CustomDateRangeInput } from "@/lib/date-window";
+export type { TimeRange } from "@/lib/time-range";
 
 declare global {
   interface Window {
@@ -29,7 +49,7 @@ declare global {
   }
 }
 
-const DEFAULT_API_BASE_URL = "http://localhost:8080";
+const DEFAULT_API_BASE_URL = "http://localhost:8081";
 
 const getApiBaseUrl = (): string => {
   if (typeof window !== "undefined") {
@@ -51,74 +71,24 @@ export interface CustomDateRange {
 }
 
 export interface AnalysisStreamEvent {
-  type: "progress" | "result" | "complete";
+  type: "progress" | "result" | "complete" | "token" | "error";
   message: string;
   timestamp?: string;
 }
 
-const timeRangeToHours = (timeRange: string | number): number => {
-  if (typeof timeRange === "number") return timeRange;
+export type AnalyzeProvider = "OPENAI" | "OLLAMA" | "CLAUDE" | "GEMINI";
 
-  switch (timeRange) {
-    case "1h":
-      return 1;
-    case "6h":
-      return 6;
-    case "24h":
-      return 24;
-    case "7d":
-      return 24 * 7;
-    case "30d":
-      return 24 * 30;
-    default:
-      return 24;
-  }
-};
+export interface StreamAnalyzeOptions extends StreamAnalysisHandlers {
+  provider?: AnalyzeProvider;
+  createRemediationPr?: boolean;
+}
 
 const getDateWindow = (timeRange: string | number, customDateRange?: CustomDateRange): { from: string; to: string } => {
-  if (
-    timeRange === "custom" &&
-    customDateRange?.from instanceof Date &&
-    customDateRange?.to instanceof Date
-  ) {
-    const from = new Date(customDateRange.from);
-    const to = new Date(customDateRange.to);
-    from.setHours(0, 0, 0, 0);
-    to.setHours(23, 59, 59, 999);
-    return { from: from.toISOString(), to: to.toISOString() };
+  const window = resolveDateWindow(timeRange, customDateRange);
+  if (!window) {
+    throw new Error("Custom time range requires both start and end dates");
   }
-
-  const hours = timeRangeToHours(timeRange);
-  return { from: isoHoursAgo(hours), to: nowIso() };
-};
-
-const durationHoursForCustomRange = (customDateRange?: CustomDateRange): number | null => {
-  if (!(customDateRange?.from instanceof Date) || !(customDateRange?.to instanceof Date)) return null;
-
-  const from = new Date(customDateRange.from);
-  const to = new Date(customDateRange.to);
-  from.setHours(0, 0, 0, 0);
-  to.setHours(23, 59, 59, 999);
-
-  const diffMs = Math.max(0, to.getTime() - from.getTime());
-  return Math.max(1, Math.ceil(diffMs / 3600_000));
-};
-
-const normalizeIssueWindow = (timeRange: string, customDateRange?: CustomDateRange): string => {
-  if (timeRange === "custom") {
-    const customHours = durationHoursForCustomRange(customDateRange);
-    if (customHours === null) return "24h";
-    if (customHours <= 1) return "1h";
-    if (customHours <= 6) return "6h";
-    if (customHours <= 24) return "24h";
-    if (customHours <= 24 * 7) return "7d";
-    return "30d";
-  }
-
-  if (timeRange === "1h" || timeRange === "6h" || timeRange === "24h" || timeRange === "7d" || timeRange === "30d") {
-    return timeRange;
-  }
-  return "24h";
+  return { from: window.from, to: window.to };
 };
 
 const handleUnauthorized = (): void => {
@@ -132,9 +102,6 @@ const handleUnauthorized = (): void => {
     window.location.assign("/login");
   }
 };
-
-const isoHoursAgo = (hours: number): string => new Date(Date.now() - hours * 3600_000).toISOString();
-const nowIso = (): string => new Date().toISOString();
 
 const toUtcIsoString = (value: string | Date): string => {
   const date = value instanceof Date ? value : new Date(value);
@@ -168,22 +135,74 @@ const createApiHeaders = (options: ApiOptions = {}): Headers => {
   return headers;
 };
 
+const parseAnalyzedAt = (value?: string): Date => {
+  if (!value) return new Date();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+};
+
+/** When the backend streams raw JSON as tokens without a result event. */
+export function parseAnalysisFromStreamText(text: string, fallbackTraceId?: string): AnalysisResult | null {
+  const trimmed = text.trim();
+  if (!trimmed.includes("errorSummary")) return null;
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(trimmed.slice(start, end + 1)) as Partial<AnalysisDto>;
+    if (!parsed.errorSummary && !parsed.rootCause) return null;
+    return mapAnalysisResult(
+      {
+        severity: parsed.severity ?? "MEDIUM",
+        confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
+        service: parsed.service,
+        errorSummary: parsed.errorSummary ?? "",
+        rootCause: parsed.rootCause ?? "",
+        affectedServices: parsed.affectedServices ?? [],
+        suggestedFixes: parsed.suggestedFixes ?? [],
+        relatedTraceIds: parsed.relatedTraceIds ?? [],
+        fingerprint: parsed.fingerprint,
+        analyzedAt: parsed.analyzedAt ?? new Date().toISOString(),
+        cached: parsed.cached,
+        cachedResult: parsed.cachedResult,
+      },
+      fallbackTraceId
+    );
+  } catch {
+    return null;
+  }
+}
+
 const mapAnalysisResult = (r: AnalysisDto, fallbackTraceId?: string): AnalysisResult => ({
-  severity: r.severity,
-  confidence: r.confidence,
+  severity: r.severity ?? "MEDIUM",
+  confidence: typeof r.confidence === "number" && !Number.isNaN(r.confidence) ? r.confidence : 0,
   service: r.service || r.affectedServices?.[0] || "unknown",
-  errorSummary: r.errorSummary,
-  rootCause: r.rootCause,
+  errorSummary: r.errorSummary ?? "",
+  rootCause: r.rootCause ?? "",
   affectedServices: r.affectedServices || [],
-  suggestedFixes: (r.suggestedFixes || []).map((f) => ({
-    priority: f.priority,
-    effort: f.effort,
-    description: f.description || f.fix || "No description",
-    code: f.fix || f.description || "",
-  })),
+  suggestedFixes: (r.suggestedFixes || []).map((f) => {
+    const patchPreview =
+      f.search && f.replace != null
+        ? `<<<<<<< SEARCH\n${f.search}\n=======\n${f.replace}\n>>>>>>> REPLACE`
+        : f.newContent || f.fix || f.description || "";
+    return {
+      priority: f.priority ?? "MEDIUM",
+      effort: f.effort ?? "MEDIUM",
+      description: f.fix || f.description || "Suggested change",
+      code: patchPreview,
+      filePath: f.filePath,
+      search: f.search,
+      replace: f.replace,
+      newContent: f.newContent,
+    };
+  }),
   relatedTraceIds: r.relatedTraceIds || (fallbackTraceId ? [fallbackTraceId] : []),
-  analyzedAt: new Date(r.analyzedAt),
+  fingerprint: r.fingerprint,
+  analyzedAt: parseAnalyzedAt(r.analyzedAt),
   cached: r.cached ?? r.cachedResult ?? false,
+  remediationPrUrl: r.remediationPrUrl,
+  remediationBranch: r.remediationBranch,
+  remediationPrNumber: r.remediationPrNumber,
 });
 
 const normalizeStreamEvent = (eventName: string, payload: Record<string, unknown>): AnalysisStreamEvent | null => {
@@ -203,22 +222,41 @@ const normalizeStreamEvent = (eventName: string, payload: Record<string, unknown
     };
   }
 
+  if (eventName === "error") {
+    return {
+      type: "error",
+      message: typeof payload.message === "string" ? payload.message : "Analysis failed",
+      timestamp: typeof payload.timestamp === "string" ? payload.timestamp : undefined,
+    };
+  }
+
+  if (eventName === "token") {
+    const text = typeof payload.text === "string" ? payload.text : "";
+    return {
+      type: "token",
+      message: text,
+      timestamp: typeof payload.timestamp === "string" ? payload.timestamp : undefined,
+    };
+  }
+
   return null;
 };
 
 async function streamAnalyzeLog(
   traceId: string,
-  provider: "OPENAI" | "OLLAMA" | "CLAUDE",
-  handlers: StreamAnalysisHandlers = {}
+  options: StreamAnalyzeOptions = {}
 ): Promise<AnalysisResult | null> {
+  const provider = options.provider ?? "OPENAI";
   const headers = createApiHeaders();
   headers.set("Accept", "text/event-stream");
+
+  const body: Record<string, unknown> = { traceId, provider };
 
   const response = await fetch(`${getApiBaseUrl()}/api/v1/logs/analyze`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ traceId, provider }),
-    signal: handlers.signal,
+    body: JSON.stringify(body),
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -244,6 +282,7 @@ async function streamAnalyzeLog(
   const decoder = new TextDecoder();
   let buffer = "";
   let finalResult: AnalysisResult | null = null;
+  let streamedTokens = "";
 
   const processBlock = (block: string) => {
     if (!block.trim()) return;
@@ -267,15 +306,20 @@ async function streamAnalyzeLog(
       if (eventName === "result") {
         const rawResult = (payload.result ?? payload) as AnalysisDto;
         finalResult = mapAnalysisResult(rawResult, traceId);
-        handlers.onResult?.(finalResult);
+        options.onResult?.(finalResult);
         return;
       }
 
       const normalized = normalizeStreamEvent(eventName, payload);
       if (normalized?.type === "progress") {
-        handlers.onProgress?.(normalized);
+        options.onProgress?.(normalized);
       } else if (normalized?.type === "complete") {
-        handlers.onComplete?.(normalized);
+        options.onComplete?.(normalized);
+      } else if (normalized?.type === "token") {
+        streamedTokens += normalized.message;
+        options.onProgress?.(normalized);
+      } else if (normalized?.type === "error") {
+        options.onProgress?.(normalized);
       }
     } catch {
       // ignore malformed SSE frames
@@ -302,6 +346,14 @@ async function streamAnalyzeLog(
     }
   } finally {
     reader.releaseLock();
+  }
+
+  if (!finalResult && streamedTokens.trim()) {
+    const parsed = parseAnalysisFromStreamText(streamedTokens, traceId);
+    if (parsed) {
+      finalResult = parsed;
+      options.onResult?.(parsed);
+    }
   }
 
   return finalResult;
@@ -346,7 +398,7 @@ interface PagedResponse<T> {
   totalElements: number;
 }
 
-interface LogDto { id: string; timestamp: string; level: "DEBUG" | "INFO" | "WARN" | "ERROR"; service: string; traceId: string; message: string; exception?: string, stackTrace?: string; resolved?: boolean; }
+interface LogDto { id: string; timestamp: string; level: "DEBUG" | "INFO" | "WARN" | "ERROR"; service: string; traceId: string; message: string; endpoint?: string; exception?: string, stackTrace?: string; resolved?: boolean; }
 interface IssueDto { id: string; severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; title?: string; service: string; errorType?: string; exceptionType?: string; occurrences?: number; occurrenceCount?: number; firstSeen: string; lastSeen: string; affectedServices?: string[]; trend?: number[]; endpoint?: string; traceId?: string; groupByKey?: string; }
 interface AggregationDto { services: Array<{ service: string; totalErrors: number; exceptions: Array<{ exception: string; count: number; timeline: Array<{ timestamp: string; count: number }> }> }> }
 interface DashboardStatsDto { totalLogs: number; totalLogsChangePercent: number; errorCount: number; errorChangePercent: number; affectedServices?: { count: number; services: string[] }; aiAnalysesRun: number; aiCached: number; aiSaved: number, totalServices: string[]; serviceCount: number }
@@ -386,13 +438,12 @@ interface TopEndpointPointDto {
   count?: number;
 }
 interface TopEndpointsResponseDto { points?: TopEndpointPointDto[] }
-interface ErrorResolutionPointDto {
-  bucketHour?: number;
-  hour?: number;
-  issueCount?: number;
-  value?: number;
+interface ErrorTriagePointDto {
+  periodLabel?: string;
+  openCount?: number;
+  resolvedCount?: number;
 }
-interface ErrorResolutionResponseDto { points?: ErrorResolutionPointDto[] }
+interface ErrorTriageResponseDto { points?: ErrorTriagePointDto[] }
 interface LiveLogDto {
   id: string;
   timestamp: string;
@@ -400,6 +451,7 @@ interface LiveLogDto {
   service: string;
   traceId: string;
   message: string;
+  endpoint?: string;
   exception?: string;
   stackTrace?: string;
   resolved?: boolean;
@@ -432,11 +484,53 @@ interface SeverityRuleUpsertDto {
 }
 interface LoginResponseDto { token: string; user: { id: string; username: string; role: string; active: boolean; createdAt: string } }
 interface ProjectDto { id: string; name: string; description?: string; createdAt: string; serviceCount?: number }
-interface AnalysisDto { severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; confidence: number; service?: string; errorSummary: string; rootCause: string; affectedServices: string[]; suggestedFixes: Array<{ fix?: string; description?: string; priority: "HIGH" | "MEDIUM" | "LOW"; effort: "QUICK" | "MEDIUM" | "COMPLEX" }>; relatedTraceIds: string[]; analyzedAt: string; cachedResult?: boolean; cached?: boolean }
-interface ProviderModelsResponseDto { provider?: "OPENAI" | "OLLAMA" | "CLAUDE"; models?: string[] }
+export interface RemediationResult {
+  fingerprint: string;
+  service?: string;
+  patchesApplied: number;
+  remediationPrUrl?: string;
+  remediationBranch?: string;
+  remediationPrNumber?: number;
+  message?: string;
+}
+
+interface AnalysisDto {
+  fingerprint?: string;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  confidence: number;
+  service?: string;
+  errorSummary: string;
+  rootCause: string;
+  affectedServices: string[];
+  suggestedFixes: Array<{
+    fix?: string;
+    description?: string;
+    priority: "HIGH" | "MEDIUM" | "LOW";
+    effort: "QUICK" | "MEDIUM" | "COMPLEX";
+    filePath?: string;
+    search?: string;
+    replace?: string;
+    newContent?: string;
+  }>;
+  relatedTraceIds: string[];
+  analyzedAt: string;
+  cachedResult?: boolean;
+  cached?: boolean;
+  remediationPrUrl?: string;
+  remediationBranch?: string;
+  remediationPrNumber?: number;
+}
+interface ProviderModelsResponseDto { provider?: AnalyzeProvider; models?: string[] }
 
 export interface ManagedUser { id: string; username: string; role: string; active: boolean; createdAt: string }
-export interface AiSettings { id?: string; provider: "OPENAI" | "OLLAMA" | "CLAUDE"; apiKey?: string; modelName: string; baseUrl?: string; active?: boolean }
+export interface AiSettings {
+  id?: string;
+  provider: AnalyzeProvider;
+  apiKey?: string;
+  modelName: string;
+  baseUrl?: string;
+  active?: boolean;
+}
 export interface LogSearchParams {
   from: string;
   to: string;
@@ -447,6 +541,7 @@ export interface LogSearchParams {
   environment?: string;
   page?: number;
   size?: number;
+  projectId?: string;
 }
 
 export interface IssueQueryParams {
@@ -532,11 +627,13 @@ const mapTopEndpoints = (dto: TopEndpointsResponseDto | null | undefined): Horiz
     .slice(0, 10);
 };
 
-const mapResolutionDist = (dto: ErrorResolutionResponseDto | null | undefined): AreaPoint[] => {
+const mapErrorTriage = (dto: ErrorTriageResponseDto | null | undefined): ErrorTriagePoint[] => {
   const points = dto?.points || [];
   return points.map((point, index) => ({
-    hour: point.bucketHour ?? point.hour ?? index,
-    value: point.issueCount ?? point.value ?? 0,
+    period: point.periodLabel || `Bucket ${index + 1}`,
+    periodKey: `${point.periodLabel || "bucket"}-${index}`,
+    open: point.openCount ?? 0,
+    resolved: point.resolvedCount ?? 0,
   }));
 };
 
@@ -583,7 +680,9 @@ export const api = {
     if (params.traceId) queryParams.set("traceId", params.traceId);
     if (params.environment) queryParams.set("environment", params.environment);
 
-    const res = await apiRequest<PagedResponse<LogDto>>(`/api/v1/logs/search?${queryParams.toString()}`);
+    const res = await apiRequest<PagedResponse<LogDto>>(`/api/v1/logs/search?${queryParams.toString()}`, {
+      projectId: params.projectId,
+    });
 
     return {
       ...res,
@@ -594,6 +693,7 @@ export const api = {
         service: l.service,
         traceId: l.traceId,
         message: l.message,
+        endpoint: l.endpoint,
         stackTrace: l.stackTrace || l.exception || "",
         resolved: l.resolved ?? false,
       })),
@@ -601,8 +701,9 @@ export const api = {
   },
 
   getLogs: async (timeRange: string | number = "24h", customDateRange?: CustomDateRange): Promise<LogEntry[]> => {
-    const { from, to } = getDateWindow(timeRange, customDateRange);
-    const res = await api.searchLogs({ from, to, size: 200, page: 0 });
+    const window = resolveDateWindow(timeRange, customDateRange);
+    if (!window) return [];
+    const res = await api.searchLogs({ from: window.from, to: window.to, size: 200, page: 0 });
     return res.content || [];
   },
 
@@ -620,6 +721,7 @@ export const api = {
       service: l.service,
       traceId: l.traceId,
       message: l.message,
+      endpoint: l.endpoint,
       stackTrace: l.stackTrace || l.exception || "",
       resolved: l.resolved ?? false,
     }));
@@ -632,6 +734,10 @@ export const api = {
     if (params.projectId) queryParams.set("projectId", params.projectId);
 
     const queryString = queryParams.toString();
+    // Same-origin SSE proxy avoids cross-origin streaming issues in the browser.
+    if (typeof window !== "undefined") {
+      return `/api/logs/stream${queryString ? `?${queryString}` : ""}`;
+    }
     return `${getApiBaseUrl()}/api/v1/logs/stream${queryString ? `?${queryString}` : ""}`;
   },
 
@@ -655,6 +761,7 @@ export const api = {
     queryParams?: IssueQueryParams
   ): Promise<IssueGroup[]> => {
     const window = normalizeIssueWindow(timeRange, customDateRange);
+    if (!window) return [];
     const params = new URLSearchParams({
       window,
       size: String(queryParams?.size ?? 100),
@@ -719,64 +826,73 @@ export const api = {
     await apiRequest<void>(`/api/v1/severity-rules/${id}`, { method: "DELETE" });
   },
 
-  analyzeLog: async (traceId: string, provider: "OPENAI" | "OLLAMA" | "CLAUDE"): Promise<AnalysisResult> => {
+  analyzeLog: async (traceId: string, provider: AnalyzeProvider): Promise<AnalysisResult> => {
     const r = await apiRequest<AnalysisDto>("/api/v1/logs/analyze", { method: "POST", body: JSON.stringify({ traceId, provider }) });
     return mapAnalysisResult(r, traceId);
   },
 
-  streamAnalyzeLog: async (
-    traceId: string,
-    provider: "OPENAI" | "OLLAMA" | "CLAUDE",
-    handlers: StreamAnalysisHandlers = {}
-  ): Promise<AnalysisResult | null> => streamAnalyzeLog(traceId, provider, handlers),
+  streamAnalyzeLog: async (traceId: string, options: StreamAnalyzeOptions = {}): Promise<AnalysisResult | null> =>
+    streamAnalyzeLog(traceId, options),
+
+  applyRemediation: async (fingerprint: string, traceId?: string): Promise<RemediationResult> =>
+    apiRequest<RemediationResult>("/api/v1/logs/remediate", {
+      method: "POST",
+      body: JSON.stringify({ fingerprint, traceId }),
+    }),
 
   getDashboardData: async (timeRange = "24h", customDateRange?: CustomDateRange) => {
-    const { from, to } = getDateWindow(timeRange, customDateRange);
+    const window = resolveDateWindow(timeRange, customDateRange);
+    if (!window) {
+      return createEmptyDashboardData();
+    }
+    const { from, to } = window;
 
-    const [logs, issues, agg, statsDto] = await Promise.all([
+    const [logs, issues, agg, statsDto, errorLogsPage] = await Promise.all([
       api.getLogs(timeRange, customDateRange),
       api.getIssues(timeRange, customDateRange),
       apiRequest<AggregationDto>(`/api/v1/logs/aggregations?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
       apiRequest<DashboardStatsDto>(`/api/v1/dashboard/stats?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+      api.searchLogs({ from, to, level: "ERROR", size: 2000, page: 0 }).catch(() => ({ content: [] as LogEntry[], totalElements: 0 })),
     ]);
 
-    const distribution: PieSlice[] = agg.services.map((s) => ({ name: s.service, value: s.totalErrors, color: svcColor(s.service) }));
-    const topErrors: HorizontalBarPoint[] = agg.services.flatMap((s) => s.exceptions.map((e) => ({ name: e.exception || "Unknown", value: e.count }))).sort((a, b) => b.value - a.value).slice(0, 5);
+    const aggServices = agg?.services ?? [];
+    const distribution: PieSlice[] = aggServices.map((s) => ({ name: s.service, value: s.totalErrors, color: svcColor(s.service) }));
+
+    const errorLogsForCharts =
+      errorLogsPage.content && errorLogsPage.content.length > 0
+        ? errorLogsPage.content
+        : logs.filter((l) => l.level === "ERROR");
+
+    let topErrors: HorizontalBarPoint[] = aggServices
+      .flatMap((s) => (s.exceptions ?? []).map((e) => ({ name: e.exception || "Unknown", value: e.count })))
+      .filter((row) => row.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+
+    if (topErrors.length === 0) {
+      topErrors = buildTopErrorsFromLogs(errorLogsForCharts, 5);
+    }
 
     const serviceNames = Array.from(
-      new Set([...(statsDto.totalServices || []), ...agg.services.map((s) => s.service)])
+      new Set([
+        ...(statsDto.totalServices || []),
+        ...aggServices.map((s) => s.service),
+        ...errorLogsForCharts.map((l) => l.service),
+      ])
+    ).filter(Boolean);
+
+    const heatmapBuilt = buildHeatmapFromErrorLogs(
+      errorLogsForCharts,
+      serviceNames,
+      window.fromMs,
+      window.toMs
     );
-
-    const makePoint = (timestamp: string): TimeSeriesPoint => {
-      const point: TimeSeriesPoint = { timestamp };
-      for (const service of serviceNames) {
-        point[service] = 0;
-      }
-      return point;
+    const heatmap = heatmapBuilt.cells;
+    const heatmapMeta = {
+      bucketMs: heatmapBuilt.bucketMs,
+      bucketCount: heatmapBuilt.bucketCount,
+      windowFromMs: heatmapBuilt.windowFromMs,
     };
-
-    const byHour: Record<string, TimeSeriesPoint> = {};
-    const heatmapByServiceHour: Record<string, Record<number, number>> = {};
-    for (const svc of agg.services) {
-      for (const ex of svc.exceptions) {
-        for (const t of ex.timeline) {
-          const key = t.timestamp.slice(11, 16);
-          const p = byHour[key] || makePoint(key);
-          const current = typeof p[svc.service] === "number" ? (p[svc.service] as number) : 0;
-          p[svc.service] = current + t.count;
-          byHour[key] = p;
-
-          const hour = Number.parseInt(t.timestamp.slice(11, 13), 10);
-          if (!Number.isNaN(hour) && hour >= 0 && hour < 24) {
-            if (!heatmapByServiceHour[svc.service]) {
-              heatmapByServiceHour[svc.service] = {};
-            }
-            const currentHourCount = heatmapByServiceHour[svc.service][hour] ?? 0;
-            heatmapByServiceHour[svc.service][hour] = currentHourCount + t.count;
-          }
-        }
-      }
-    }
 
     const affectedServices = statsDto.affectedServices || { count: 0, services: [] };
 
@@ -794,13 +910,6 @@ export const api = {
     };
 
     const levelVolume: BarPoint[] = ["DEBUG", "INFO", "WARN", "ERROR"].map((level) => ({ name: level, value: logs.filter((l) => l.level === level).length }));
-    const heatmap: HeatmapCell[] = serviceNames.flatMap((service) =>
-      Array.from({ length: 24 }, (_, hour) => ({
-        service,
-        hour,
-        value: heatmapByServiceHour[service]?.[hour] ?? 0,
-      }))
-    );
 
     const weeklyTrendResponse = await apiRequest<WeeklyTrendResponseDto>(
       `/api/v1/analytics/weekly-trend?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
@@ -825,29 +934,56 @@ export const api = {
     const topEndpointsResponse = await apiRequest<TopEndpointsResponseDto>(
       `/api/v1/analytics/top-endpoints?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
     ).catch(() => null);
-    const topEndpoints = mapTopEndpoints(topEndpointsResponse);
+    let topEndpoints = mapTopEndpoints(topEndpointsResponse);
+    if (topEndpoints.length === 0) {
+      topEndpoints = buildTopEndpointsFromLogs(errorLogsForCharts, 5);
+    }
 
-    const resolutionResponse = await apiRequest<ErrorResolutionResponseDto>(
-      `/api/v1/analytics/error-resolution?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    const triageResponse = await apiRequest<ErrorTriageResponseDto>(
+      `/api/v1/analytics/error-triage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
     ).catch(() => null);
-    const resolutionDist = mapResolutionDist(resolutionResponse);
+    let errorTriage = mapErrorTriage(triageResponse);
+    if (errorTriage.length === 0) {
+      errorTriage = buildErrorTriageFromLogs(errorLogsForCharts, window.fromMs, window.toMs);
+    }
+
+    let errorTimeline = buildErrorTimelineFromAggregations(aggServices, serviceNames);
+    if (errorTimeline.length === 0) {
+      const errorLogs = errorLogsPage.content?.length ? errorLogsPage.content : logs;
+      errorTimeline = buildErrorTimelineFromLogs(errorLogs, serviceNames, window.fromMs, window.toMs);
+    }
+    if (errorTimeline.length === 0) {
+      errorTimeline = buildErrorTimelineFromIngestion(ingestionRate);
+    }
+
+    const bucketMs = bucketMsForWindow(window.fromMs, window.toMs);
+    if (errorTimeline.length > 0) {
+      errorTimeline = densifyErrorTimeline(
+        errorTimeline,
+        serviceNames,
+        window.fromMs,
+        window.toMs,
+        bucketMs
+      );
+    }
 
     return {
       stats,
       logs,
       issues,
       analysisSeedTraceId: logs.find((l) => !!l.traceId)?.traceId,
-      errorTimeline: Object.values(byHour).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp))),
+      errorTimeline,
       distribution,
       levelVolume,
       topErrors,
       weeklyTrend,
-      resolutionDist,
+      errorTriage,
       aiUsage,
       ingestionRate,
       severityMix,
       topEndpoints,
       heatmap,
+      heatmapMeta,
       liveErrors: Array.from({ length: 60 }, (_, i) => ({ timestamp: i, errors: 0, throughput: 0 })) as LivePoint[],
     };
   },

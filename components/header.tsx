@@ -1,15 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { DateRange } from "react-day-picker";
-import { Calendar as CalendarIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { usePathname } from "next/navigation";
+import { Clock } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useProject } from "@/lib/project-context";
 import {
@@ -19,39 +12,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-const TIME_RANGES = [
-  { value: "1h", label: "1h" },
-  { value: "6h", label: "6h" },
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7d" },
-  { value: "30d", label: "30d" },
-  { value: "custom", label: "Custom" },
-] as const;
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { useLiveStreamPreference } from "@/lib/live-stream-context";
+import { TIME_RANGE_OPTIONS, type TimeRange } from "@/lib/time-range";
+import { CustomTimeRangePicker } from "@/components/custom-time-range-picker";
+import { defaultCustomDayRange } from "@/lib/datetime-range";
 
 export function Header() {
+  const pathname = usePathname();
   const [isCustomDateOpen, setIsCustomDateOpen] = useState(false);
-  const { timeRange, setTimeRange, customDateRange, setCustomDateRange } = useProject();
+  const { timeRange, setTimeRange, setCustomDateRange } = useProject();
+  const { sseEnabled, setSseEnabled } = useLiveStreamPreference();
+  const showSseToggle = pathname !== "/live";
 
-  const calendarRange: DateRange = {
-    from: customDateRange.from,
-    to: customDateRange.to,
-  };
-
-  const formatDateRangeLabel = (range: { from?: Date; to?: Date }): string => {
-    if (range.from && range.to) {
-      return `${range.from.toLocaleDateString()} - ${range.to.toLocaleDateString()}`;
-    }
-    if (range.from) {
-      return `${range.from.toLocaleDateString()} - ...`;
-    }
-    return "Select date range";
-  };
-
-  const handleTimeRangeChange = async (value: (typeof TIME_RANGES)[number]["value"]) => {
+  const handleTimeRangeChange = async (value: TimeRange) => {
     await setTimeRange(value);
 
     if (value === "custom") {
+      const defaults = defaultCustomDayRange();
+      await setCustomDateRange(defaults);
       setIsCustomDateOpen(true);
     } else {
       setIsCustomDateOpen(false);
@@ -59,56 +39,48 @@ export function Header() {
   };
 
   return (
-    <header className="fixed top-0 left-60 right-0 h-16 border-b border-border bg-card px-6 flex items-center justify-between z-40">
-      {/* Left: Time Range */}
-      <div className="flex items-center gap-4">
-        {/* Environment dropdown hidden for now */}
-
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Time Range:</span>
-          <Select value={timeRange} onValueChange={(value) => void handleTimeRangeChange(value as (typeof TIME_RANGES)[number]["value"])}>
-            <SelectTrigger className="w-32 bg-input border-border text-foreground">
-              <SelectValue />
+    <header className="fixed left-60 right-0 top-0 z-40 flex h-16 items-center justify-between border-b border-border bg-background/75 px-6 backdrop-blur-xl">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card pl-3 pr-1 shadow-xs">
+          <Clock className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
+          <span className="text-xs font-medium text-muted-foreground">Range</span>
+          <Select value={timeRange} onValueChange={(value) => void handleTimeRangeChange(value as TimeRange)}>
+            <SelectTrigger className="h-7 w-[10.5rem] border-0 bg-transparent px-2 text-[13px] font-medium shadow-none focus:ring-0 dark:bg-transparent">
+              <SelectValue placeholder="Select range" />
             </SelectTrigger>
-            <SelectContent className="bg-popover border-border">
-              {TIME_RANGES.map((tr) => (
+            <SelectContent>
+              {TIME_RANGE_OPTIONS.map((tr) => (
                 <SelectItem key={tr.value} value={tr.value}>
                   {tr.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-
           {timeRange === "custom" && (
-            <Popover open={isCustomDateOpen} onOpenChange={setIsCustomDateOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-[250px] justify-start text-left font-normal"
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {formatDateRangeLabel(calendarRange)}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="range"
-                  selected={calendarRange}
-                  onSelect={(range) => void setCustomDateRange(range || {})}
-                  numberOfMonths={2}
-                />
-              </PopoverContent>
-            </Popover>
+            <CustomTimeRangePicker open={isCustomDateOpen} onOpenChange={setIsCustomDateOpen} />
           )}
         </div>
       </div>
 
-      {/* Right: Live Status and Theme Toggle */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-muted-foreground">Live</span>
-        </div>
+      <div className="flex items-center gap-3">
+        {showSseToggle && (
+          <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 shadow-xs">
+            <Switch
+              id="header-sse-toggle"
+              checked={sseEnabled}
+              onCheckedChange={setSseEnabled}
+              aria-label="Toggle live log updates"
+            />
+            <Label htmlFor="header-sse-toggle" className="cursor-pointer text-xs font-medium text-muted-foreground">
+              Live updates
+            </Label>
+            <span
+              className={sseEnabled ? "h-1.5 w-1.5 rounded-full bg-success animate-pulse" : "h-1.5 w-1.5 rounded-full bg-muted-foreground/40"}
+              aria-hidden
+            />
+          </div>
+        )}
+        <div className="h-6 w-px bg-border" aria-hidden />
         <ThemeToggle />
       </div>
     </header>

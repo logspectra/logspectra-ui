@@ -3,35 +3,63 @@
 import { useState, useEffect } from "react";
 import { SeverityRule, SeverityRuleInput } from "@/lib/types";
 import { api } from "@/lib/api";
-import { Card } from "@/components/ui/card";
+import { useProject } from "@/lib/project-context";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Shield } from "lucide-react";
+import { PageHeader, PageShell } from "@/components/page-shell";
+import { PanelCard } from "@/components/panel-card";
+import { StatCard } from "@/components/stat-card";
+import { EmptyState } from "@/components/empty-state";
 import { SeverityRuleForm } from "@/components/severity-rule-form";
 import { SeverityRulesTable } from "@/components/severity-rules-table";
+import { PageErrorBanner } from "@/components/page-error-banner";
 
 export default function SeverityRules() {
+  const { selectedProject, timeRange, customDateRange } = useProject();
   const [rules, setRules] = useState<SeverityRule[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<SeverityRule | null>(null);
   const [services, setServices] = useState<string[]>([]);
+  const [pageError, setPageError] = useState("");
 
   useEffect(() => {
+    if (!selectedProject?.id) {
+      setRules([]);
+      setServices([]);
+      return;
+    }
+
+    let cancelled = false;
+
     const fetchSeverityRuleData = async () => {
+      setPageError("");
       try {
         const [dashboardData, severityRules] = await Promise.all([
-          api.getDashboardData(),
+          api.getDashboardData(timeRange, customDateRange),
           api.getSeverityRules(),
         ]);
-        if (dashboardData.stats?.totalServices) {
-          setServices(dashboardData.stats.totalServices);
-        }
+        if (cancelled) return;
+        setServices(dashboardData.stats?.totalServices ?? []);
         setRules(severityRules);
       } catch (error) {
-        console.error("Failed to fetch severity rule data:", error);
+        if (!cancelled) {
+          setPageError(error instanceof Error ? error.message : "Failed to load severity rules");
+          setRules([]);
+          setServices([]);
+        }
       }
     };
-    fetchSeverityRuleData();
-  }, []);
+
+    void fetchSeverityRuleData();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedProject?.id,
+    timeRange,
+    customDateRange.from?.getTime(),
+    customDateRange.to?.getTime(),
+  ]);
 
   const handleAddRule = () => {
     setEditingRule(null);
@@ -56,8 +84,11 @@ export default function SeverityRules() {
       }
       setIsFormOpen(false);
       setEditingRule(null);
+      setPageError("");
     } catch (error) {
-      console.error("Failed to save severity rule:", error);
+      const message = error instanceof Error ? error.message : "Failed to save severity rule";
+      setPageError(message);
+      throw error instanceof Error ? error : new Error(message);
     }
   };
 
@@ -65,8 +96,9 @@ export default function SeverityRules() {
     try {
       await api.deleteSeverityRule(ruleId);
       setRules((prevRules) => prevRules.filter((rule) => rule.id !== ruleId));
+      setPageError("");
     } catch (error) {
-      console.error("Failed to delete severity rule:", error);
+      setPageError(error instanceof Error ? error.message : "Failed to delete severity rule");
     }
   };
 
@@ -76,52 +108,47 @@ export default function SeverityRules() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 gap-4">
-        <Card className="p-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Total Rules</p>
-            <p className="text-3xl font-bold text-foreground mt-2">{stats.total}</p>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Critical Severity</p>
-            <p className="text-3xl font-bold text-red-600 mt-2">{stats.critical}</p>
-          </div>
-        </Card>
-      </div>
-
-      {/* Rules Section */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">
-            Exception Pattern Rules
-          </h2>
-          <Button
-            onClick={handleAddRule}
-            className="bg-primary hover:bg-primary/90"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add New Rule
+    <PageShell className="space-y-6">
+      <PageHeader
+        icon={Shield}
+        eyebrow="Classification"
+        title="Severity rules"
+        description="Map exception patterns to severity levels for issue grouping and alerts."
+        actions={
+          <Button onClick={handleAddRule}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add rule
           </Button>
-        </div>
+        }
+      />
+      <PageErrorBanner message={pageError} />
 
-        {rules.length > 0 ? (
-          <SeverityRulesTable
-            rules={rules}
-            onEdit={handleEditRule}
-            onDelete={handleDeleteRule}
-          />
-        ) : (
-          <Card className="p-8 text-center">
-            <p className="text-muted-foreground">
-              No severity rules configured yet. Create your first rule to get started.
-            </p>
-          </Card>
-        )}
+      <div className="grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
+        <StatCard label="Total rules" value={stats.total} />
+        <StatCard
+          label="Critical rules"
+          value={stats.critical}
+          hint={<span className="text-red-600 dark:text-red-400">Highest severity</span>}
+        />
       </div>
+
+      <PanelCard title="Exception pattern rules" bodyClassName="min-w-0">
+        {rules.length > 0 ? (
+          <SeverityRulesTable rules={rules} onEdit={handleEditRule} onDelete={handleDeleteRule} />
+        ) : (
+          <EmptyState
+            icon={Shield}
+            title="No severity rules yet"
+            description="Rules match exception patterns (and optionally services) to CRITICAL, HIGH, MEDIUM, or LOW for issue grouping."
+            action={
+              <Button onClick={handleAddRule}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add your first rule
+              </Button>
+            }
+          />
+        )}
+      </PanelCard>
 
       {/* Form Modal */}
       {isFormOpen && (
@@ -135,6 +162,6 @@ export default function SeverityRules() {
           }}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

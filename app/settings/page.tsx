@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Settings as SettingsIcon, Save } from "lucide-react";
+import { PageHeader, PageShell } from "@/components/page-shell";
+import { PanelCard } from "@/components/panel-card";
 import { api, AiSettings } from "@/lib/api";
 
 const OLLAMA_DEFAULT_PORT = "11434";
@@ -29,6 +31,9 @@ export default function Settings() {
   const [modelFetchError, setModelFetchError] = useState("");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [apiKeyInput, setApiKeyInput] = useState("");
+
+  const cloudProvider = selectedProvider === "OPENAI" || selectedProvider === "CLAUDE" || selectedProvider === "GEMINI";
 
   useEffect(() => {
     const load = async () => {
@@ -100,8 +105,13 @@ export default function Settings() {
 
   const handleProviderChange = (provider: AiSettings["provider"]) => {
     setSelectedProvider(provider);
+    setApiKeyInput("");
     if (provider === "OLLAMA") {
       setAi({ ...ai, provider, baseUrl: `http://localhost:${OLLAMA_DEFAULT_PORT}` });
+      return;
+    }
+    if (provider === "GEMINI") {
+      setAi({ ...ai, provider, baseUrl: "https://generativelanguage.googleapis.com" });
       return;
     }
 
@@ -115,21 +125,24 @@ export default function Settings() {
         return;
       }
 
+      const trimmedKey = apiKeyInput.trim();
       const payload: AiSettings =
         selectedProvider === "OLLAMA"
           ? {
               ...ai,
               provider: selectedProvider,
               active: true,
-              apiKey: undefined,
               baseUrl: `http://localhost:${OLLAMA_DEFAULT_PORT}`,
             }
           : {
               ...ai,
               provider: selectedProvider,
               active: true,
-              apiKey: undefined,
-              baseUrl: undefined,
+              apiKey: trimmedKey || undefined,
+              baseUrl:
+                selectedProvider === "GEMINI"
+                  ? ai.baseUrl || "https://generativelanguage.googleapis.com"
+                  : undefined,
             };
 
       await api.upsertAiSettings(payload);
@@ -142,16 +155,18 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <SettingsIcon className="w-5 h-5 text-blue-500" />
-          <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-        </div>
-        <p className="text-sm text-muted-foreground">Configure LogSpectra dashboard and monitoring preferences</p>
-      </div>
+    <PageShell className="max-w-2xl space-y-6">
+      <PageHeader
+        icon={SettingsIcon}
+        eyebrow="Configuration"
+        title="Settings"
+        description="Dashboard preferences and AI provider configuration."
+      />
+      <p className="text-xs text-muted-foreground -mt-4">
+        Sections marked <Badge variant="secondary" className="mx-1">Coming soon</Badge> are placeholders; AI Provider Settings is wired to the backend.
+      </p>
 
-      <Card className="p-6"><h3 className="text-lg font-semibold text-foreground mb-4">Alert Configuration</h3><div className="space-y-4"><div><Label className="text-sm text-muted-foreground mb-2 block">Error Rate Alert Threshold</Label><div className="flex items-center gap-2"><Input type="number" value={settings.alertThreshold} disabled readOnly className="bg-input border-border text-foreground max-w-xs" /><span className="text-sm text-muted-foreground">errors per minute</span></div></div></div></Card>
+      <Card className="p-6 opacity-80"><div className="flex items-center justify-between mb-4"><h3 className="text-lg font-semibold text-foreground">Alert Configuration</h3><Badge variant="secondary">Coming soon</Badge></div><div className="space-y-4"><div><Label className="text-sm text-muted-foreground mb-2 block">Error Rate Alert Threshold</Label><div className="flex items-center gap-2"><Input type="number" value={settings.alertThreshold} disabled readOnly className="bg-input border-border text-foreground max-w-xs" /><span className="text-sm text-muted-foreground">errors per minute</span></div></div></div></Card>
 
       <Card className="p-6"><h3 className="text-lg font-semibold text-foreground mb-4">Data Retention</h3><Select value={settings.retentionDays} disabled><SelectTrigger className="bg-input border-border text-foreground max-w-xs"><SelectValue /></SelectTrigger><SelectContent className="bg-popover border-border"><SelectItem value="0">0</SelectItem><SelectItem value="7">7 days</SelectItem><SelectItem value="14">14 days</SelectItem><SelectItem value="30">30 days</SelectItem><SelectItem value="60">60 days</SelectItem><SelectItem value="90">90 days</SelectItem></SelectContent></Select></Card>
 
@@ -166,8 +181,31 @@ export default function Settings() {
         <div className="space-y-3">
           <Select value={selectedProvider} onValueChange={(provider) => handleProviderChange(provider as AiSettings["provider"])}>
             <SelectTrigger className="bg-input border-border text-foreground"><SelectValue placeholder="Select provider" /></SelectTrigger>
-            <SelectContent className="bg-popover border-border"><SelectItem value="OPENAI">OPENAI</SelectItem><SelectItem value="OLLAMA">OLLAMA</SelectItem><SelectItem value="CLAUDE">CLAUDE</SelectItem></SelectContent>
+            <SelectContent className="bg-popover border-border">
+              <SelectItem value="OPENAI">OpenAI</SelectItem>
+              <SelectItem value="GEMINI">Google Gemini</SelectItem>
+              <SelectItem value="CLAUDE">Anthropic Claude</SelectItem>
+              <SelectItem value="OLLAMA">Ollama (local)</SelectItem>
+            </SelectContent>
           </Select>
+          {cloudProvider && (
+            <div>
+              <Label className="text-sm text-muted-foreground mb-2 block">API key</Label>
+              <Input
+                type="password"
+                autoComplete="off"
+                placeholder={ai.apiKey ? `Saved (${ai.apiKey}) — enter to replace` : "Paste provider API key"}
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                className="bg-input border-border text-foreground"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {selectedProvider === "GEMINI"
+                  ? "Uses Google AI (Generative Language API). Header: X-goog-api-key."
+                  : "Stored in LogSpectra backend for this provider."}
+              </p>
+            </div>
+          )}
           <Select value={ai.modelName} onValueChange={(modelName) => setAi({ ...ai, modelName })}>
             <SelectTrigger className="bg-input border-border text-foreground" disabled={!selectedProvider || isLoadingModels || modelOptions.length === 0}>
               <SelectValue placeholder={isLoadingModels ? "Loading models..." : "Select model"} />
@@ -191,9 +229,9 @@ export default function Settings() {
         </div>
       </Card>
 
-      <Card className="p-6"><h3 className="text-lg font-semibold text-foreground mb-4">System Status</h3><div className="space-y-3"><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Dashboard Version</span><Badge className="bg-blue-900 text-blue-100">v1.0.0</Badge></div><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Data Source</span><Badge className="bg-green-900 text-green-100">Backend API</Badge></div><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Last Updated</span><span className="text-sm text-foreground">{new Date().toLocaleString()}</span></div></div></Card>
+      <Card className="p-6"><h3 className="text-lg font-semibold text-foreground mb-4">System Status</h3><div className="space-y-3"><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Dashboard Version</span><Badge variant="outline" className="border-primary/25 bg-primary/10 text-primary">v1.0.0</Badge></div><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Data Source</span><Badge variant="outline" className="border-success/25 bg-success/10 text-success">Backend API</Badge></div><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Last Updated</span><span className="text-sm text-foreground">{new Date().toLocaleString()}</span></div></div></Card>
 
       <div className="flex gap-2"><Button onClick={() => void handleSave()} className="bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4 mr-2" />Save Settings</Button>{saved && <Badge className="bg-green-900 text-green-100 animate-pulse">Settings saved successfully</Badge>}</div>
-    </div>
+    </PageShell>
   );
 }
