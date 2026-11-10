@@ -68,7 +68,7 @@ export default function LoginPage() {
             }}
             aria-hidden
           />
-          <Logo className="relative [&>span:last-child]:text-slate-100" />
+          <Logo className="relative" wordmarkClassName="text-slate-100" />
           <div className="relative">
             <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-blue-300">
               Open source · Self-hosted

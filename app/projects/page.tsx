@@ -6,7 +6,8 @@ import { useProject } from '@/lib/project-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { Plus, Folder, LogOut, Zap } from 'lucide-react';
+import { Plus, Folder, LogOut } from 'lucide-react';
+import { Logo } from '@/components/logo';
 import { PageErrorBanner } from '@/components/page-error-banner';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader, PageShell } from '@/components/page-shell';
@@ -62,14 +63,10 @@ export default function ProjectsPage() {
     <div className="min-h-screen bg-muted/30">
       <header className="border-b border-border/80 bg-card/95 backdrop-blur">
         <PageShell className="flex items-center justify-between py-5 pb-8">
-          <div className="flex items-center gap-2.5">
-            <div className="rounded-lg bg-primary p-2 shadow-sm">
-              <Zap className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <div>
-              <p className="text-lg font-semibold tracking-tight">LogSpectra</p>
-              <p className="text-xs text-muted-foreground">Welcome, {user.name}</p>
-            </div>
+          <div className="flex items-center gap-3">
+            <Logo />
+            <div className="hidden h-6 w-px bg-border sm:block" aria-hidden />
+            <p className="hidden text-xs text-muted-foreground sm:block">Welcome, {user.name}</p>
           </div>
           <Button variant="outline" size="sm" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" />
