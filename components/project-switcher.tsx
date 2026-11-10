@@ -42,17 +42,17 @@ export function ProjectSwitcher() {
         variant="outline"
         size="sm"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full justify-between"
+        className="h-9 w-full justify-between bg-card shadow-xs"
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <Folder className="w-4 h-4 flex-shrink-0" />
+          <Folder className="w-4 h-4 flex-shrink-0 text-primary" />
           <span className="truncate text-sm font-medium">{selectedProject?.name || 'Select Project'}</span>
         </div>
         <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </Button>
 
       {isOpen && (
-        <Card className="absolute top-full left-0 right-0 mt-2 z-50 w-full">
+        <Card className="absolute top-full left-0 right-0 z-50 mt-2 w-full gap-0 py-0 shadow-lg">
           <div className="p-2">
             {/* Project List */}
             <div className="max-h-48 overflow-y-auto mb-2">

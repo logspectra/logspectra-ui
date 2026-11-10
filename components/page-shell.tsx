@@ -24,20 +24,24 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <div className={cn("flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between", className)}>
-      <div className="min-w-0">
-        {(Icon || eyebrow) && (
-          <div className="mb-1 flex items-center gap-2 text-primary">
-            {Icon ? <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden /> : null}
-            {eyebrow ? (
-              <span className="text-xs font-semibold uppercase tracking-wider">{eyebrow}</span>
-            ) : null}
+    <div className={cn("flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between", className)}>
+      <div className="flex min-w-0 items-start gap-4">
+        {Icon ? (
+          <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary sm:flex">
+            <Icon className="h-5 w-5" strokeWidth={1.9} aria-hidden />
           </div>
-        )}
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
-        {description ? (
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p>
         ) : null}
+        <div className="min-w-0">
+          {eyebrow ? (
+            <span className="mb-1.5 inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-2.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-primary">
+              {eyebrow}
+            </span>
+          ) : null}
+          <h1 className="text-[26px] font-semibold leading-tight tracking-tight text-foreground">{title}</h1>
+          {description ? (
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p>
+          ) : null}
+        </div>
       </div>
       {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
@@ -47,7 +51,12 @@ export function PageHeader({
 export function PageSection({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <section className="space-y-4">
-      {title ? <h2 className="text-sm font-medium text-muted-foreground">{title}</h2> : null}
+      {title ? (
+        <div className="flex items-center gap-3">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</h2>
+          <div className="h-px flex-1 bg-gradient-to-r from-border to-transparent" aria-hidden />
+        </div>
+      ) : null}
       {children}
     </section>
   );
@@ -69,13 +78,13 @@ export function LiveStatusPill({
         : "Live updates off";
 
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
+    <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-xs">
       <span
         className={cn(
           "h-2 w-2 rounded-full",
-          isLive && "bg-emerald-500 animate-pulse",
-          !isLive && !isIdle && "bg-amber-500 animate-pulse",
-          isIdle && "bg-zinc-400"
+          isLive && "bg-success animate-pulse",
+          !isLive && !isIdle && "bg-warning animate-pulse",
+          isIdle && "bg-muted-foreground/40"
         )}
       />
       <span>{label}</span>

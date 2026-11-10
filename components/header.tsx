@@ -39,13 +39,13 @@ export function Header() {
   };
 
   return (
-    <header className="fixed left-60 right-0 top-0 z-40 flex min-h-[4.25rem] items-center justify-between border-b border-border/80 bg-card/95 px-6 py-2 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+    <header className="fixed left-60 right-0 top-0 z-40 flex h-16 items-center justify-between border-b border-border bg-background/75 px-6 backdrop-blur-xl">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5">
+        <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card pl-3 pr-1 shadow-xs">
           <Clock className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
           <span className="text-xs font-medium text-muted-foreground">Range</span>
           <Select value={timeRange} onValueChange={(value) => void handleTimeRangeChange(value as TimeRange)}>
-            <SelectTrigger className="h-8 w-[10.5rem] border-0 bg-transparent shadow-none focus:ring-0">
+            <SelectTrigger className="h-7 w-[10.5rem] border-0 bg-transparent px-2 text-[13px] font-medium shadow-none focus:ring-0 dark:bg-transparent">
               <SelectValue placeholder="Select range" />
             </SelectTrigger>
             <SelectContent>
@@ -62,20 +62,25 @@ export function Header() {
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         {showSseToggle && (
-          <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5">
+          <div className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 shadow-xs">
             <Switch
               id="header-sse-toggle"
               checked={sseEnabled}
               onCheckedChange={setSseEnabled}
               aria-label="Toggle live log updates"
             />
-            <Label htmlFor="header-sse-toggle" className="cursor-pointer text-xs text-muted-foreground">
+            <Label htmlFor="header-sse-toggle" className="cursor-pointer text-xs font-medium text-muted-foreground">
               Live updates
             </Label>
+            <span
+              className={sseEnabled ? "h-1.5 w-1.5 rounded-full bg-success animate-pulse" : "h-1.5 w-1.5 rounded-full bg-muted-foreground/40"}
+              aria-hidden
+            />
           </div>
         )}
+        <div className="h-6 w-px bg-border" aria-hidden />
         <ThemeToggle />
       </div>
     </header>

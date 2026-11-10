@@ -19,6 +19,7 @@ import {
 } from "recharts";
 import { api } from "@/lib/api";
 import type { IssueGroup, IssueGroupBy } from "@/lib/types";
+import { severityClass } from "@/lib/level-styles";
 import { TrendingUp, TrendingDown, Brain, AlertCircle } from "lucide-react";
 import { PageErrorBanner } from "@/components/page-error-banner";
 import { PageHeader, PageShell } from "@/components/page-shell";
@@ -203,17 +204,7 @@ export default function Issues() {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
-                  <Badge
-                    className={
-                      issue.severity === "CRITICAL"
-                        ? "bg-red-900 text-red-100"
-                        : issue.severity === "HIGH"
-                          ? "bg-orange-900 text-orange-100"
-                          : issue.severity === "MEDIUM"
-                            ? "bg-yellow-900 text-yellow-100"
-                            : "bg-blue-900 text-blue-100"
-                    }
-                  >
+                  <Badge variant="outline" className={severityClass(issue.severity)}>
                     {issue.severity}
                   </Badge>
                   <h3 className="text-sm font-semibold text-foreground">

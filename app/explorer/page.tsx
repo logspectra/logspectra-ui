@@ -50,6 +50,7 @@ import { PageHeader, PageShell } from "@/components/page-shell";
 import { PanelCard } from "@/components/panel-card";
 import { AnalyticsChartTooltip } from "@/components/analytics-chart-tooltip";
 import { chartAxisTick, chartGrid } from "@/lib/recharts-theme";
+import { logLevelClass } from "@/lib/level-styles";
 
 export default function LogExplorer() {
   const { selectedProject, timeRange, customDateRange } = useProject();
@@ -583,7 +584,6 @@ export default function LogExplorer() {
               <TableRow className="border-border hover:bg-transparent">
                 <TableHead className="w-12">
                   <Checkbox
-                    className="border-zinc-300 bg-zinc-100 text-zinc-900 data-[state=checked]:bg-zinc-200 data-[state=checked]:text-zinc-900 data-[state=checked]:border-zinc-400"
                     checked={selectedLogIds.size === unresolvedLogs.length && unresolvedLogs.length > 0}
                     onCheckedChange={handleSelectAll}
                     disabled={unresolvedLogs.length === 0}
@@ -610,7 +610,6 @@ export default function LogExplorer() {
                         <CheckCircle2 className="w-4 h-4 text-green-500" aria-label="Resolved log" />
                       ) : (
                         <Checkbox
-                          className="border-zinc-300 bg-zinc-100 text-zinc-900 data-[state=checked]:bg-zinc-200 data-[state=checked]:text-zinc-900 data-[state=checked]:border-zinc-400"
                           checked={selectedLogIds.has(log.id)}
                           onCheckedChange={() => handleToggleCheckbox(log.id)}
                           aria-label={`Select log ${log.id}`}
@@ -621,25 +620,15 @@ export default function LogExplorer() {
                       {log.timestamp.toLocaleTimeString()}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        className={
-                          log.level === "ERROR"
-                            ? "bg-red-900 text-red-100"
-                            : log.level === "WARN"
-                              ? "bg-yellow-900 text-yellow-100"
-                              : log.level === "INFO"
-                                ? "bg-blue-900 text-blue-100"
-                                : "bg-zinc-700 text-zinc-100"
-                        }
-                      >
+                      <Badge variant="outline" className={logLevelClass(log.level)}>
                         {log.level}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {log.service}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground font-mono">
-                      {log.traceId ? `${log.traceId.slice(0, 12)}...` : "-"}
+                    <TableCell className="font-mono text-[11px] text-muted-foreground">
+                      {log.traceId ? `${log.traceId.slice(0, 12)}…` : "—"}
                     </TableCell>
                     <TableCell className="text-sm text-foreground max-w-xs truncate">
                       {log.message}
@@ -684,17 +673,7 @@ export default function LogExplorer() {
               <div className="space-y-3 rounded-lg border border-border bg-card p-4">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Level</p>
-                  <Badge
-                    className={
-                      selectedLog.level === "ERROR"
-                        ? "bg-red-900 text-red-100"
-                        : selectedLog.level === "WARN"
-                          ? "bg-yellow-900 text-yellow-100"
-                          : selectedLog.level === "INFO"
-                            ? "bg-blue-900 text-blue-100"
-                            : "bg-zinc-700 text-zinc-100"
-                    }
-                  >
+                  <Badge variant="outline" className={logLevelClass(selectedLog.level)}>
                     {selectedLog.level}
                   </Badge>
                 </div>

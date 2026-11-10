@@ -451,6 +451,7 @@ interface LiveLogDto {
   service: string;
   traceId: string;
   message: string;
+  endpoint?: string;
   exception?: string;
   stackTrace?: string;
   resolved?: boolean;

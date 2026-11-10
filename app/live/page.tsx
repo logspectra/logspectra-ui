@@ -24,6 +24,7 @@ import { PageHeader, PageShell, LiveStatusPill } from "@/components/page-shell";
 import { PanelCard } from "@/components/panel-card";
 import { AnalyticsChartTooltip } from "@/components/analytics-chart-tooltip";
 import { chartAxisTick, chartGrid, chartMarginWithLegend } from "@/lib/recharts-theme";
+import { logLevelClass } from "@/lib/level-styles";
 
 const formatTimeTick = (timestamp: number | string) => {
   const numeric = typeof timestamp === "number" ? timestamp : Number(timestamp);
@@ -161,13 +162,6 @@ export default function LiveStream() {
     setTimeout(() => setCopiedTraceId(null), 2000);
   };
 
-  const LevelColors: Record<string, string> = {
-    ERROR: "bg-red-900/30 border-red-900 text-red-100",
-    WARN: "bg-yellow-900/30 border-yellow-900 text-yellow-100",
-    INFO: "bg-blue-900/30 border-blue-900 text-blue-100",
-    DEBUG: "bg-muted border-border text-foreground",
-  };
-
   const CustomTooltip = AnalyticsChartTooltip;
 
   return (
@@ -265,25 +259,22 @@ export default function LiveStream() {
       </div>
 
       <PanelCard title="Live log stream" bodyClassName="min-w-0">
-        <div className="h-96 w-full min-w-0 space-y-1 overflow-y-auto overflow-x-auto rounded-lg border border-border/80 bg-muted/30 p-4 font-mono text-xs">
+        <div className="h-96 w-full min-w-0 space-y-0.5 overflow-y-auto overflow-x-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs dark:bg-[#080c10]">
           {[...liveLogEntries].reverse().map((log, idx) => (
             <div
               key={idx}
-              className={`flex items-start gap-2 p-2 rounded transition-all duration-500 ${
-                LevelColors[log.level as keyof typeof LevelColors] ||
-                "bg-muted border-border text-foreground"
-              } border border-opacity-50 group hover:bg-opacity-50`}
+              className="group flex items-center gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-muted"
               style={{
                 animation: `fadeIn 0.5s ease-in-out ${idx * 0.05}s both`,
               }}
             >
-              <span className="text-muted-foreground flex-shrink-0">
-                [{log.timestamp.toLocaleTimeString()}]
+              <span className="text-muted-foreground/70 flex-shrink-0 tabular-nums">
+                {log.timestamp.toLocaleTimeString()}
               </span>
-              <Badge variant="outline" className="flex-shrink-0 h-5">
+              <Badge variant="outline" className={`h-5 w-14 flex-shrink-0 justify-center ${logLevelClass(log.level)}`}>
                 {log.level}
               </Badge>
-              <span className="text-muted-foreground flex-shrink-0">{log.service}</span>
+              <span className="w-28 flex-shrink-0 truncate text-accent">{log.service}</span>
               <span className="flex-1 text-foreground truncate">{log.message}</span>
               <Button
                 size="sm"

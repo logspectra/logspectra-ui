@@ -14,14 +14,18 @@ export function StatCard({ label, value, hint, aside, className }: StatCardProps
   return (
     <Card
       className={cn(
-        "gap-0 border-border/80 py-0 shadow-sm transition-shadow hover:shadow-md",
+        "group relative gap-0 overflow-hidden border-border py-0 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-primary/30 dark:shadow-none",
         className
       )}
     >
-      <div className="flex items-start justify-between gap-3 p-4">
+      <div
+        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
+        aria-hidden
+      />
+      <div className="flex items-start justify-between gap-3 p-5">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-          <p className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-foreground">{value}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
+          <p className="mt-2.5 text-3xl font-semibold tabular-nums tracking-tight text-foreground">{value}</p>
           {hint ? <div className="mt-2 text-xs text-muted-foreground">{hint}</div> : null}
         </div>
         {aside ? <div className="shrink-0">{aside}</div> : null}

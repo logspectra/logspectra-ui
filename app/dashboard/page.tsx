@@ -199,7 +199,7 @@ export default function Dashboard() {
   const heatmapLookup = new Map(heatmapData.map((cell) => [`${cell.service}-${cell.hour}`, cell.value]));
 
   const heatmapColorClass = (value: number): string => {
-    if (value <= 0) return "bg-gray-100";
+    if (value <= 0) return "bg-muted";
     if (maxHeatmapValue <= 0) return "bg-blue-200";
 
     const ratio = value / maxHeatmapValue;
@@ -392,7 +392,7 @@ export default function Dashboard() {
             <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
               <span>Low</span>
               <div className="flex gap-1">
-                <div className="w-3 h-3 bg-gray-100 rounded-sm" />
+                <div className="w-3 h-3 bg-muted rounded-sm" />
                 <div className="w-3 h-3 bg-blue-200 rounded-sm" />
                 <div className="w-3 h-3 bg-amber-200 rounded-sm" />
                 <div className="w-3 h-3 bg-orange-400 rounded-sm" />
