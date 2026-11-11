@@ -11,6 +11,7 @@ import { Logo } from '@/components/logo';
 import { PageErrorBanner } from '@/components/page-error-banner';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader, PageShell } from '@/components/page-shell';
+import { ProjectIdCopy } from '@/components/project-id-copy';
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -102,14 +103,14 @@ export default function ProjectsPage() {
                       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
                         <Folder className="h-5 w-5 text-primary" />
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <h3 className="font-semibold text-foreground">{project.name}</h3>
-                        <p className="truncate text-xs text-muted-foreground">{project.id}</p>
+                        {project.description ? (
+                          <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{project.description}</p>
+                        ) : null}
                       </div>
                     </div>
-                    {project.description ? (
-                      <p className="mb-4 text-sm text-muted-foreground">{project.description}</p>
-                    ) : null}
+                    <ProjectIdCopy projectId={project.id} variant="panel" className="mb-4" />
                     <div className="flex items-center justify-between border-t border-border/60 pt-4 text-xs text-muted-foreground">
                       <span>{project.serviceCount ?? 0} services</span>
                       <span>Open →</span>
