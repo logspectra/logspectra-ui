@@ -30,7 +30,7 @@ Prerequisites:
 
 - Node.js 20+
 - pnpm
-- Backend service available (default expected base URL: `http://localhost:8080`)
+- Backend service available (default expected base URL: `http://localhost:8081`)
 
 Install:
 
