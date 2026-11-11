@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useProject } from "@/lib/project-context";
 import { ProjectSwitcher } from "@/components/project-switcher";
+import { ProjectIdCopy } from "@/components/project-id-copy";
 import { Logo } from "@/components/logo";
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
@@ -56,7 +57,7 @@ export function Sidebar() {
   const searchParams = useSearchParams();
   const query = searchParams.toString();
   const withAppState = (path: string) => (query ? `${path}?${query}` : path);
-  const { logout, user } = useProject();
+  const { logout, user, selectedProject } = useProject();
   const displayName = user?.name || user?.email || "User";
   const initials = displayName.slice(0, 2).toUpperCase();
 
@@ -75,8 +76,11 @@ export function Sidebar() {
 
       <div className="flex-1 overflow-y-auto px-3 py-5">
         <GroupLabel>Project</GroupLabel>
-        <div className="mb-6 px-1">
+        <div className="mb-4 space-y-3 px-1">
           <ProjectSwitcher />
+          {selectedProject?.id ? (
+            <ProjectIdCopy projectId={selectedProject.id} variant="panel" className="text-left" />
+          ) : null}
         </div>
 
         {NAV_GROUPS.map((group) => (
