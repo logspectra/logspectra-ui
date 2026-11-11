@@ -46,7 +46,7 @@ Docker env NEXT_PUBLIC_API_BASE_URL
 
 - Node.js 20+
 - pnpm
-- Backend API reachable (default: `http://localhost:8080`)
+- Backend API reachable (default: `http://localhost:8081`)
 
 ## Local Development
 
@@ -85,7 +85,7 @@ Resolution order in `lib/api.ts`:
 
 1. `window.__LOGSPECTRA_ENV.NEXT_PUBLIC_API_BASE_URL` (runtime injected)
 2. `process.env.NEXT_PUBLIC_API_BASE_URL` (build-time)
-3. fallback `http://localhost:8080`
+3. fallback `http://localhost:8081`
 
 ### Important Networking Note
 
@@ -93,7 +93,7 @@ If the UI runs in a browser on your host machine, browser requests cannot resolv
 
 Use host-reachable URLs such as:
 
-- `http://localhost:8080`
+- `http://localhost:8081`
 
 Use container DNS names only for container-to-container communication, not browser-to-container resolution.
 
@@ -126,9 +126,11 @@ Images: `logspectra/logspectra-ui` on [Docker Hub](https://hub.docker.com/r/logs
 ```bash
 docker pull logspectra/logspectra-ui:latest
 docker run --name logspectra-ui -p 3050:3050 \
-  -e NEXT_PUBLIC_API_BASE_URL=http://localhost:8080 \
+  -e NEXT_PUBLIC_API_BASE_URL=http://localhost:8081 \
   logspectra/logspectra-ui:latest
 ```
+
+In **full-stack Compose**, set `LOGSPECTRA_API_URL=http://logspectra-backend:8081` on the UI service (server-side live-log SSE proxy). `NEXT_PUBLIC_API_BASE_URL` stays `http://localhost:8081` for the browser.
 
 Compose (UI only):
 
@@ -164,7 +166,7 @@ For full-stack local setup, ensure backend and required infra are running before
 ## Troubleshooting
 
 - `ERR_NAME_NOT_RESOLVED` for backend host:
-  - set `NEXT_PUBLIC_API_BASE_URL` to `http://localhost:8080` for browser-based access.
+  - set `NEXT_PUBLIC_API_BASE_URL` to `http://localhost:8081` for browser-based access.
 - UI loads but API requests fail:
   - verify backend is running and exposed on host port.
 - Runtime env not reflected:

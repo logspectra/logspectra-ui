@@ -48,7 +48,8 @@ COPY --from=builder /app/public ./public
 # Set environment variables
 ENV NODE_ENV=production
 ENV PORT=3050
-ENV NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+ENV NEXT_PUBLIC_API_BASE_URL=http://localhost:8081
+ENV LOGSPECTRA_API_URL=http://logspectra-backend:8081
 
 # Expose the port (default 3050)
 EXPOSE 3050
